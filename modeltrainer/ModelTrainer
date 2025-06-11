@@ -1,0 +1,145 @@
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
+import pandas as pd
+import numpy as np
+import pickle
+from datetime import datetime, timedelta
+import logging
+import os
+
+class ModelTrainer:
+    def __init__(self, db_manager: EnhancedDatabaseManager, config: Dict[str, Any]):
+        self.db_manager = db_manager
+        self.config = config
+        self.model = None
+        self.scaler = StandardScaler()
+        self.model_path = "models/random_forest_model.pkl"
+        self.scaler_path = "models/scaler.pkl"
+        os.makedirs("models", exist_ok=True)
+        self.logger = logging.getLogger(__name__)
+        self.feature_columns = [
+            'price', 'quantity', 'confidence', 'fees',
+            'btc_price', 'btc_dominance', 'volatility_index', 'fear_greed_index'
+        ]
+        self.min_samples = 100  # Minimum samples for training
+        self.last_train_time = None
+
+    def prepare_data(self, lookback_days: int = 30) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        """Prepare features and labels from database."""
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=lookback_days)
+            with self.db_manager.pool.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT t.*, m.btc_price, m.btc_dominance, m.volatility_index, m.fear_greed_index
+                    FROM trades t
+                    LEFT JOIN market_conditions m ON t.timestamp = m.timestamp
+                    WHERE t.timestamp >= ? AND t.timestamp <= ?
+                """, (start_date.isoformat(), end_date.isoformat()))
+                trades = [dict(row) for row in cursor.fetchall()]
+
+            if len(trades) < self.min_samples:
+                self.logger.warning(f"Insufficient data: {len(trades)} samples, required {self.min_samples}")
+                return None, None, self.feature_columns
+
+            df = pd.DataFrame(trades)
+            available_features = [col for col in self.feature_columns if col in df.columns]
+            df = df[available_features].fillna(df[available_features].mean())  # Impute missing values
+            df['label'] = (df['profit_loss'] > 0).astype(int)
+
+            X = df[available_features].values
+            y = df['label'].values
+            self.logger.info(f"Prepared {len(X)} samples with {len(available_features)} features")
+            return X, y, available_features
+
+    def train_model(self, lookback_days: int = 30, reason: str = "Scheduled") -> bool:
+        """Train or retrain the RandomForestClassifier."""
+        try:
+            X, y, feature_columns = self.prepare_data(lookback_days)
+            if X is None:
+                return False
+
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
+            X_train_scaled = self.scaler.fit_transform(X_train)
+            X_test_scaled = self.scaler.transform(X_test)
+
+            self.model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=5,
+                min_samples_split=5,
+                random_state=42,
+                class_weight='balanced'
+            )
+            self.model.fit(X_train_scaled, y_train)
+
+            y_pred = self.model.predict(X_test_scaled)
+            accuracy = accuracy_score(y_test, y_pred)
+            self.last_train_time = datetime.now()
+
+            with open(self.model_path, 'wb') as f:
+                pickle.dump(self.model, f)
+            with open(self.scaler_path, 'wb') as f:
+                pickle.dump(self.scaler, f)
+
+            self.db_manager.log_system_event(
+                event_type="MODEL_TRAINING",
+                message=f"Model retrained ({reason}) with {len(X)} samples, accuracy: {accuracy:.2f}",
+                severity="INFO",
+                component="ModelTrainer"
+            )
+            self.logger.info(f"Model trained - Accuracy: {accuracy:.2f}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Model training failed: {e}")
+            self.db_manager.log_system_event(
+                event_type="MODEL_TRAINING_ERROR",
+                message=f"Training failed: {str(e)}",
+                severity="ERROR",
+                component="ModelTrainer"
+            )
+            return False
+
+    def load_model(self) -> bool:
+        """Load saved model and scaler."""
+        try:
+            if os.path.exists(self.model_path) and os.path.exists(self.scaler_path):
+                with open(self.model_path, 'rb') as f:
+                    self.model = pickle.load(f)
+                with open(self.scaler_path, 'rb') as f:
+                    self.scaler = pickle.load(f)
+                self.logger.info("Model and scaler loaded")
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"Error loading model: {e}")
+            return False
+
+    def should_retrain(self) -> Tuple[bool, str]:
+        """Determine if retraining is needed based on time or market conditions."""
+        try:
+            # Time-based trigger: retrain daily
+            if self.last_train_time is None or (datetime.now() - self.last_train_time) > timedelta(days=1):
+                return True, "Daily schedule"
+
+            # Market condition trigger: high volatility
+            with self.db_manager.pool.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT volatility_index
+                    FROM market_conditions
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                """)
+                row = cursor.fetchone()
+                if row and row['volatility_index'] > 0.75:  # Arbitrary threshold
+                    return True, "High volatility detected"
+
+            return False, "No retraining needed"
+        except Exception as e:
+            self.logger.error(f"Error checking retrain condition: {e}")
+            return False, "Error"
