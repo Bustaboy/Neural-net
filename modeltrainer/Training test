@@ -1,0 +1,28 @@
+import unittest
+from unittest.mock import MagicMock
+
+class TestModelTrainer(unittest.TestCase):
+    def setUp(self):
+        self.db_manager = MagicMock()
+        self.config = {}
+        self.trainer = ModelTrainer(self.db_manager, self.config)
+
+    def test_prepare_data(self):
+        self.db_manager.pool.get_connection().__enter__().cursor().execute.return_value = [
+            {'price': 50000, 'confidence': 0.8, 'profit_loss': 100, 'btc_price': 50000, 'volatility_index': 0.5}
+        ]
+        X, y, features = self.trainer.prepare_data(lookback_days=30)
+        self.assertIsNotNone(X)
+        self.assertEqual(y[0], 1)  # Profitable trade
+        self.assertIn('price', features)
+
+    def test_train_model(self):
+        self.trainer.prepare_data = MagicMock(return_value=(
+            np.array([[50000, 0.8, 0.5]] * 100),
+            np.array([1] * 50 + [0] * 50),
+            ['price', 'confidence', 'volatility_index']
+        ))
+        self.assertTrue(self.trainer.train_model(lookback_days=30))
+
+if __name__ == '__main__':
+    unittest.main()
