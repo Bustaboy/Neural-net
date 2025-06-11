@@ -1,0 +1,1145 @@
+# integrated_model_trainer_automl.py
+# Integration of GitHub ModelTrainer with Advanced AutoML
+
+import optuna
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.metrics import accuracy_score, classification_report, f1_score
+import xgboost as xgb
+import lightgbm as lgb
+import pickle
+import os
+from datetime import datetime, timedelta
+import logging
+from typing import Dict, Any, Tuple, List, Optional
+import asyncio
+from multiprocessing import Process, Queue
+import json
+
+# Import the hyperparameter optimizer
+from advanced_hyperparameter_optimization import AdvancedHyperparameterOptimizer
+
+class EnhancedModelTrainer:
+    """
+    Enhanced ModelTrainer that integrates AutoML hyperparameter optimization
+    with the existing training pipeline from GitHub.
+    """
+    
+    def __init__(self, db_manager, config: Dict[str, Any]):
+        self.db_manager = db_manager
+        self.config = config
+        self.model = None
+        self.scaler = StandardScaler()
+        self.optimizer = AdvancedHyperparameterOptimizer(
+            n_trials=config.get('optimization_trials', 50)
+        )
+        
+        # Model paths
+        self.model_dir = "models"
+        self.model_path = os.path.join(self.model_dir, "optimized_model.pkl")
+        self.scaler_path = os.path.join(self.model_dir, "scaler.pkl")
+        self.temp_model_path = os.path.join(self.model_dir, "temp_optimized_model.pkl")
+        self.temp_scaler_path = os.path.join(self.model_dir, "temp_scaler.pkl")
+        self.optimization_results_path = os.path.join(self.model_dir, "optimization_results.json")
+        
+        os.makedirs(self.model_dir, exist_ok=True)
+        
+        self.logger = logging.getLogger(__name__)
+        
+        # Feature columns from GitHub implementation
+        self.feature_columns = [
+            'price', 'quantity', 'confidence', 'fees',
+            'btc_price', 'btc_dominance', 'volatility_index', 'fear_greed_index'
+        ]
+        
+        # Additional technical indicators for enhanced features
+        self.technical_features = [
+            'rsi', 'macd', 'bollinger_upper', 'bollinger_lower',
+            'volume_ratio', 'price_momentum', 'volatility_20d'
+        ]
+        
+        self.min_samples = 100
+        self.last_train_time = None
+        self.training_in_progress = False
+        self.current_model_type = None
+        self.optimization_history = []
+        
+    def prepare_data(self, lookback_days: int = 30) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        """
+        Prepare features and labels from database with enhanced feature engineering.
+        """
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=lookback_days)
+            
+            with self.db_manager.pool.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT t.*, m.btc_price, m.btc_dominance, m.volatility_index, m.fear_greed_index
+                    FROM trades t
+                    LEFT JOIN market_conditions m ON t.timestamp = m.timestamp
+                    WHERE t.timestamp >= ? AND t.timestamp <= ?
+                    ORDER BY t.timestamp
+                """, (start_date.isoformat(), end_date.isoformat()))
+                trades = [dict(row) for row in cursor.fetchall()]
+            
+            if len(trades) < self.min_samples:
+                self.logger.warning(f"Insufficient data: {len(trades)} samples, required {self.min_samples}")
+                return None, None, self.feature_columns
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(trades)
+            
+            # Add technical indicators if we have price history
+            if 'price' in df.columns and len(df) > 20:
+                df = self._add_technical_indicators(df)
+            
+            # Combine all features
+            all_features = self.feature_columns + self.technical_features
+            available_features = [col for col in all_features if col in df.columns]
+            
+            # Handle missing values
+            df[available_features] = df[available_features].fillna(method='ffill').fillna(method='bfill')
+            df[available_features] = df[available_features].fillna(df[available_features].mean())
+            
+            # Create label
+            df['label'] = (df['profit_loss'] > 0).astype(int)
+            
+            # Remove rows with any remaining NaN values
+            df_clean = df.dropna(subset=available_features + ['label'])
+            
+            X = df_clean[available_features].values
+            y = df_clean['label'].values
+            
+            self.logger.info(f"Prepared {len(X)} samples with {len(available_features)} features")
+            return X, y, available_features
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing data: {e}")
+            return None, None, self.feature_columns
+    
+    def _add_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add technical indicators to the dataframe."""
+        try:
+            # RSI
+            df['rsi'] = self._calculate_rsi(df['price'])
+            
+            # MACD
+            df['macd'] = self._calculate_macd(df['price'])
+            
+            # Bollinger Bands
+            bb_upper, bb_lower = self._calculate_bollinger_bands(df['price'])
+            df['bollinger_upper'] = bb_upper
+            df['bollinger_lower'] = bb_lower
+            
+            # Volume ratio
+            df['volume_ratio'] = df['quantity'] / df['quantity'].rolling(20).mean()
+            
+            # Price momentum
+            df['price_momentum'] = df['price'].pct_change(5)
+            
+            # 20-day volatility
+            df['volatility_20d'] = df['price'].pct_change().rolling(20).std()
+            
+        except Exception as e:
+            self.logger.warning(f"Error calculating technical indicators: {e}")
+            
+        return df
+    
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate RSI indicator."""
+        delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+    
+    def _calculate_macd(self, prices: pd.Series) -> pd.Series:
+        """Calculate MACD indicator."""
+        exp1 = prices.ewm(span=12, adjust=False).mean()
+        exp2 = prices.ewm(span=26, adjust=False).mean()
+        macd = exp1 - exp2
+        return macd
+    
+    def _calculate_bollinger_bands(self, prices: pd.Series, period: int = 20, std_dev: int = 2):
+        """Calculate Bollinger Bands."""
+        sma = prices.rolling(window=period).mean()
+        std = prices.rolling(window=period).std()
+        upper_band = sma + (std * std_dev)
+        lower_band = sma - (std * std_dev)
+        return upper_band, lower_band
+    
+    def train_model_with_optimization(self, lookback_days: int = 30, 
+                                    reason: str = "Scheduled",
+                                    model_types: List[str] = None,
+                                    use_ensemble: bool = True) -> bool:
+        """
+        Train model with automatic hyperparameter optimization.
+        """
+        try:
+            if self.training_in_progress:
+                self.logger.info("Training already in progress, skipping")
+                return False
+                
+            self.training_in_progress = True
+            
+            # Use process queue for communication
+            result_queue = Queue()
+            
+            def optimization_process(queue: Queue):
+                """Run optimization in separate process."""
+                try:
+                    # Prepare data
+                    X, y, feature_columns = self.prepare_data(lookback_days)
+                    if X is None:
+                        queue.put({'success': False, 'error': 'Insufficient data'})
+                        return
+                    
+                    # Split data
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=0.2, random_state=42, stratify=y
+                    )
+                    
+                    # Default model types
+                    if model_types is None:
+                        model_types = ['xgboost', 'lightgbm', 'random_forest']
+                    
+                    # Run optimization
+                    self.logger.info(f"Starting hyperparameter optimization for {model_types}")
+                    optimization_results = self.optimizer.optimize(
+                        X_train, y_train,
+                        model_types=model_types,
+                        eval_metric='f1'  # Using F1 score for imbalanced data
+                    )
+                    
+                    # Find best model
+                    best_model_type = max(
+                        optimization_results.items(),
+                        key=lambda x: x[1]['best_value']
+                    )[0]
+                    
+                    best_params = optimization_results[best_model_type]['best_params']
+                    
+                    # Create final model with best parameters
+                    if best_model_type == 'random_forest':
+                        clean_params = {k.replace('rf_', ''): v for k, v in best_params.items()}
+                        final_model = RandomForestClassifier(**clean_params, random_state=42)
+                    elif best_model_type == 'xgboost':
+                        clean_params = {k.replace('xgb_', ''): v for k, v in best_params.items()}
+                        final_model = xgb.XGBClassifier(**clean_params, random_state=42, use_label_encoder=False)
+                    elif best_model_type == 'lightgbm':
+                        clean_params = {k.replace('lgb_', ''): v for k, v in best_params.items()}
+                        final_model = lgb.LGBMClassifier(**clean_params, random_state=42, verbosity=-1)
+                    
+                    # Scale and train final model
+                    scaler = StandardScaler()
+                    X_train_scaled = scaler.fit_transform(X_train)
+                    X_test_scaled = scaler.transform(X_test)
+                    
+                    final_model.fit(X_train_scaled, y_train)
+                    
+                    # Evaluate
+                    y_pred = final_model.predict(X_test_scaled)
+                    accuracy = accuracy_score(y_test, y_pred)
+                    f1 = f1_score(y_test, y_pred)
+                    
+                    # Save temporary models
+                    with open(self.temp_model_path, 'wb') as f:
+                        pickle.dump(final_model, f)
+                    with open(self.temp_scaler_path, 'wb') as f:
+                        pickle.dump(scaler, f)
+                    
+                    # Save optimization results
+                    results_to_save = {
+                        'timestamp': datetime.now().isoformat(),
+                        'best_model': best_model_type,
+                        'best_params': best_params,
+                        'accuracy': accuracy,
+                        'f1_score': f1,
+                        'optimization_results': {
+                            k: {'best_value': v['best_value'], 'best_params': v['best_params']}
+                            for k, v in optimization_results.items()
+                        },
+                        'feature_columns': feature_columns,
+                        'samples_used': len(X)
+                    }
+                    
+                    with open(self.optimization_results_path, 'w') as f:
+                        json.dump(results_to_save, f, indent=4)
+                    
+                    queue.put({
+                        'success': True,
+                        'model_type': best_model_type,
+                        'accuracy': accuracy,
+                        'f1_score': f1,
+                        'results': results_to_save
+                    })
+                    
+                except Exception as e:
+                    queue.put({'success': False, 'error': str(e)})
+            
+            # Start optimization process
+            p = Process(target=optimization_process, args=(result_queue,))
+            p.start()
+            p.join(timeout=3600)  # 1 hour timeout
+            
+            if p.is_alive():
+                p.terminate()
+                p.join()
+                self.logger.error("Optimization process timed out")
+                return False
+            
+            # Get results
+            if not result_queue.empty():
+                result = result_queue.get()
+                
+                if result['success']:
+                    # Swap to new model
+                    self.swap_model()
+                    self.current_model_type = result['model_type']
+                    
+                    # Log success
+                    self.db_manager.log_system_event(
+                        event_type="MODEL_TRAINING",
+                        message=f"Model optimized and trained ({reason}) - Type: {result['model_type']}, "
+                               f"Accuracy: {result['accuracy']:.3f}, F1: {result['f1_score']:.3f}",
+                        severity="INFO",
+                        component="EnhancedModelTrainer"
+                    )
+                    
+                    # Store in history
+                    self.optimization_history.append(result['results'])
+                    
+                    return True
+                else:
+                    self.logger.error(f"Optimization failed: {result.get('error')}")
+                    return False
+            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Error in training process: {e}")
+            return False
+        finally:
+            self.training_in_progress = False
+    
+    def train_model(self, lookback_days: int = 30, reason: str = "Scheduled") -> bool:
+        """
+        Backward compatible method that uses optimization by default.
+        """
+        # Check if we should use simple training or optimization
+        use_optimization = self.config.get('use_automl', True)
+        
+        if use_optimization:
+            return self.train_model_with_optimization(lookback_days, reason)
+        else:
+            # Fall back to original simple training
+            return self._train_simple_model(lookback_days, reason)
+    
+    def _train_simple_model(self, lookback_days: int = 30, reason: str = "Scheduled") -> bool:
+        """
+        Original simple training method without optimization.
+        """
+        try:
+            X, y, feature_columns = self.prepare_data(lookback_days)
+            if X is None:
+                return False
+            
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
+            
+            X_train_scaled = self.scaler.fit_transform(X_train)
+            X_test_scaled = self.scaler.transform(X_test)
+            
+            # Use simple RandomForest as in original
+            self.model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=5,
+                min_samples_split=5,
+                random_state=42,
+                class_weight='balanced'
+            )
+            
+            self.model.fit(X_train_scaled, y_train)
+            
+            y_pred = self.model.predict(X_test_scaled)
+            accuracy = accuracy_score(y_test, y_pred)
+            
+            self.last_train_time = datetime.now()
+            
+            # Save model
+            with open(self.model_path, 'wb') as f:
+                pickle.dump(self.model, f)
+            with open(self.scaler_path, 'wb') as f:
+                pickle.dump(self.scaler, f)
+            
+            self.db_manager.log_system_event(
+                event_type="MODEL_TRAINING",
+                message=f"Model retrained ({reason}) with {len(X)} samples, accuracy: {accuracy:.2f}",
+                severity="INFO",
+                component="ModelTrainer"
+            )
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Model training failed: {e}")
+            return False
+    
+    def swap_model(self):
+        """Swap to the newly trained model atomically."""
+        try:
+            if os.path.exists(self.temp_model_path) and os.path.exists(self.temp_scaler_path):
+                # Atomic swap
+                os.replace(self.temp_model_path, self.model_path)
+                os.replace(self.temp_scaler_path, self.scaler_path)
+                
+                # Reload model
+                self.load_model()
+                self.last_train_time = datetime.now()
+                
+                self.logger.info("Model swapped successfully")
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"Error swapping model: {e}")
+            return False
+    
+    def load_model(self) -> bool:
+        """Load saved model and scaler."""
+        try:
+            if os.path.exists(self.model_path) and os.path.exists(self.scaler_path):
+                with open(self.model_path, 'rb') as f:
+                    self.model = pickle.load(f)
+                with open(self.scaler_path, 'rb') as f:
+                    self.scaler = pickle.load(f)
+                
+                # Load optimization results if available
+                if os.path.exists(self.optimization_results_path):
+                    with open(self.optimization_results_path, 'r') as f:
+                        results = json.load(f)
+                        self.current_model_type = results.get('best_model')
+                
+                self.logger.info(f"Model loaded (type: {self.current_model_type})")
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"Error loading model: {e}")
+            return False
+    
+    def should_retrain(self) -> Tuple[bool, str]:
+        """
+        Determine if retraining is needed based on time or market conditions.
+        Enhanced with performance monitoring.
+        """
+        if not self.last_train_time:
+            return True, "No previous training detected"
+        
+        # Time-based retraining
+        hours_since_training = (datetime.now() - self.last_train_time).total_seconds() / 3600
+        retrain_hours = self.config.get('retrain_hours', 24)
+        
+        if hours_since_training >= retrain_hours:
+            return True, f"Time threshold exceeded ({hours_since_training:.1f} hours)"
+        
+        # Performance-based retraining
+        recent_performance = self.get_recent_model_performance()
+        if recent_performance and recent_performance < 0.5:  # Below 50% accuracy
+            return True, f"Poor model performance ({recent_performance:.2%})"
+        
+        # Market condition change detection
+        if self.detect_market_regime_change():
+            return True, "Market regime change detected"
+        
+        return False, "No retraining needed"
+    
+    def get_recent_model_performance(self, hours: int = 6) -> Optional[float]:
+        """
+        Calculate recent model performance from trades.
+        """
+        try:
+            end_time = datetime.now()
+            start_time = end_time - timedelta(hours=hours)
+            
+            with self.db_manager.pool.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT COUNT(*) as total,
+                           SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as profitable
+                    FROM trades
+                    WHERE timestamp >= ? AND timestamp <= ?
+                    AND confidence > 0.5
+                """, (start_time.isoformat(), end_time.isoformat()))
+                
+                result = cursor.fetchone()
+                if result and result['total'] > 10:  # Need at least 10 trades
+                    return result['profitable'] / result['total']
+                    
+        except Exception as e:
+            self.logger.error(f"Error calculating model performance: {e}")
+            
+        return None
+    
+    def detect_market_regime_change(self) -> bool:
+        """
+        Detect significant changes in market conditions.
+        """
+        try:
+            with self.db_manager.pool.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Get recent volatility
+                cursor.execute("""
+                    SELECT AVG(volatility_index) as recent_vol
+                    FROM market_conditions
+                    WHERE timestamp >= ?
+                """, ((datetime.now() - timedelta(hours=6)).isoformat(),))
+                
+                recent_vol = cursor.fetchone()['recent_vol']
+                
+                # Get historical volatility
+                cursor.execute("""
+                    SELECT AVG(volatility_index) as hist_vol
+                    FROM market_conditions
+                    WHERE timestamp >= ? AND timestamp < ?
+                """, (
+                    (datetime.now() - timedelta(days=7)).isoformat(),
+                    (datetime.now() - timedelta(hours=6)).isoformat()
+                ))
+                
+                hist_vol = cursor.fetchone()['hist_vol']
+                
+                if recent_vol and hist_vol:
+                    # Detect significant change (>50% difference)
+                    change_ratio = abs(recent_vol - hist_vol) / hist_vol
+                    return change_ratio > 0.5
+                    
+        except Exception as e:
+            self.logger.error(f"Error detecting market regime change: {e}")
+            
+        return False
+    
+    def get_feature_importance(self) -> Optional[Dict[str, float]]:
+        """
+        Get feature importance from the current model.
+        """
+        if not self.model:
+            return None
+            
+        try:
+            if hasattr(self.model, 'feature_importances_'):
+                # For tree-based models
+                importance = self.model.feature_importances_
+                feature_names = self.feature_columns + self.technical_features
+                return dict(zip(feature_names[:len(importance)], importance))
+            elif self.current_model_type == 'neural_network':
+                # For neural networks, we could use permutation importance
+                return None
+        except Exception as e:
+            self.logger.error(f"Error getting feature importance: {e}")
+            
+        return None
+    
+    def predict(self, features: np.ndarray) -> Tuple[int, float]:
+        """
+        Make prediction with confidence score.
+        """
+        if not self.model or not self.scaler:
+            self.logger.warning("No model available for prediction")
+            return 0, 0.5
+            
+        try:
+            features_scaled = self.scaler.transform(features.reshape(1, -1))
+            prediction = self.model.predict(features_scaled)[0]
+            
+            # Get probability if available
+            if hasattr(self.model, 'predict_proba'):
+                confidence = self.model.predict_proba(features_scaled)[0].max()
+            else:
+                confidence = 0.5
+                
+            return int(prediction), float(confidence)
+            
+        except Exception as e:
+            self.logger.error(f"Prediction error: {e}")
+            return 0, 0.5
+
+
+# Enhanced Trading Bot that uses the new trainer
+class EnhancedTradingBotWithAutoML:
+    """
+    Trading bot that integrates the enhanced model trainer with AutoML.
+    """
+    
+    def __init__(self, config: Dict[str, Any]):
+        from notification_manager import EnhancedNotificationManager
+        from api_call_manager import EnhancedAPICallManager
+        from database_manager import EnhancedDatabaseManager
+        
+        self.db_manager = EnhancedDatabaseManager()
+        self.notification_manager = EnhancedNotificationManager(config)
+        self.api_manager = EnhancedAPICallManager()
+        self.trainer = EnhancedModelTrainer(self.db_manager, config)
+        self.config = config
+        self.logger = logging.getLogger(__name__)
+        self.running = False
+        
+    async def start(self):
+        """Start the bot and initialize model."""
+        self.running = True
+        
+        # Try to load existing model
+        if not self.trainer.load_model():
+            self.logger.info("No model found, initiating training with optimization...")
+            
+            # Use AutoML for initial training
+            if self.trainer.train_model_with_optimization(
+                lookback_days=30, 
+                reason="Initial training",
+                model_types=['xgboost', 'lightgbm', 'random_forest'],
+                use_ensemble=False
+            ):
+                self.notification_manager.send_email(
+                    subject="Initial Model Training Complete (AutoML)",
+                    body=f"Model trained successfully using AutoML optimization.\n"
+                         f"Best model: {self.trainer.current_model_type}",
+                    priority="normal"
+                )
+            else:
+                self.logger.error("Initial model training failed")
+                return
+                
+        await self.main_loop()
+    
+    async def check_retrain(self):
+        """Check and perform retraining if needed."""
+        while self.running:
+            try:
+                should_retrain, reason = self.trainer.should_retrain()
+                
+                if should_retrain:
+                    self.logger.info(f"Triggering retraining: {reason}")
+                    
+                    # Use AutoML for retraining if configured
+                    use_automl = self.config.get('use_automl_retrain', True)
+                    
+                    if use_automl:
+                        success = self.trainer.train_model_with_optimization(
+                            lookback_days=30,
+                            reason=reason
+                        )
+                    else:
+                        success = self.trainer.train_model(
+                            lookback_days=30,
+                            reason=reason
+                        )
+                    
+                    if success:
+                        self.notification_manager.send_email(
+                            subject="Model Retraining Complete",
+                            body=f"Model retrained due to {reason.lower()}.\n"
+                                 f"Model type: {self.trainer.current_model_type or 'RandomForest'}",
+                            priority="normal"
+                        )
+                        await self.notify_web_clients({
+                            "event": "model_retrained", 
+                            "reason": reason,
+                            "model_type": self.trainer.current_model_type
+                        })
+                        
+                await asyncio.sleep(3600)  # Check hourly
+                
+            except Exception as e:
+                self.logger.error(f"Retraining check failed: {e}")
+                await asyncio.sleep(300)  # Retry after 5 minutes
+    
+    async def notify_web_clients(self, message: Dict[str, Any]):
+        """Notify web clients via WebSocket."""
+        self.logger.debug(f"WebSocket notification: {message}")
+    
+    async def main_loop(self):
+        """Main trading loop."""
+        asyncio.create_task(self.check_retrain())
+        
+        while self.running:
+            await self.generate_signals()
+            await asyncio.sleep(60)
+    
+    async def generate_signals(self):
+        """Generate trading signals using the optimized model."""
+        if not self.trainer.model:
+            self.logger.warning("No trained model available")
+            return
+            
+        try:
+            # Get recent market data
+            market_data = await self.fetch_recent_market_data()
+            
+            if not market_data:
+                return
+                
+            # Prepare features
+            features = self.prepare_features_for_prediction(market_data)
+            
+            if features is None:
+                return
+                
+            # Make prediction
+            signal, confidence = self.trainer.predict(features)
+            
+            # Log prediction
+            self.logger.info(f"Signal: {'BUY' if signal == 1 else 'SELL'}, "
+                           f"Confidence: {confidence:.2%}")
+            
+            # Execute trade if confidence is high enough
+            min_confidence = self.config.get('min_confidence', 0.65)
+            
+            if confidence >= min_confidence:
+                await self.execute_trade(
+                    signal='BUY' if signal == 1 else 'SELL',
+                    confidence=confidence,
+                    market_data=market_data
+                )
+                
+        except Exception as e:
+            self.logger.error(f"Error generating signals: {e}")
+    
+    async def fetch_recent_market_data(self) -> Optional[Dict[str, Any]]:
+        """Fetch recent market data for signal generation."""
+        # Implementation depends on your data source
+        # This is a placeholder
+        return {
+            'price': 50000,
+            'quantity': 1.5,
+            'confidence': 0.7,
+            'fees': 10,
+            'btc_price': 50000,
+            'btc_dominance': 45,
+            'volatility_index': 0.3,
+            'fear_greed_index': 50
+        }
+    
+    def prepare_features_for_prediction(self, market_data: Dict[str, Any]) -> Optional[np.ndarray]:
+        """Prepare features from market data for prediction."""
+        try:
+            # Extract features in the same order as training
+            features = []
+            
+            for col in self.trainer.feature_columns:
+                if col in market_data:
+                    features.append(market_data[col])
+                else:
+                    # Use default value or skip
+                    features.append(0)
+                    
+            return np.array(features)
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing features: {e}")
+            return None
+    
+    async def execute_trade(self, signal: str, confidence: float, market_data: Dict[str, Any]):
+        """Execute trade based on signal and confidence."""
+        self.logger.info(f"Executing {signal} trade with {confidence:.2%} confidence")
+        # Implement actual trade execution logic
+
+
+# FastAPI endpoints for the enhanced trainer
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
+from pydantic import BaseModel
+from typing import List
+
+app = FastAPI(title="AutoML Trading Bot API")
+
+class RetrainRequest(BaseModel):
+    lookback_days: int = 30
+    features: Optional[List[str]] = None
+    use_automl: bool = True
+    model_types: Optional[List[str]] = None
+    optimization_trials: int = 50
+
+class OptimizationStatus(BaseModel):
+    status: str
+    current_model: Optional[str]
+    last_training: Optional[str]
+    optimization_history: List[Dict[str, Any]]
+
+# Global bot instance (in production, use dependency injection)
+bot = None
+
+def get_bot():
+    """Get bot instance for dependency injection."""
+    if bot is None:
+        raise HTTPException(status_code=503, detail="Bot not initialized")
+    return bot
+
+def get_trainer():
+    """Get trainer instance for dependency injection."""
+    return get_bot().trainer
+
+@app.post("/api/retrain_model")
+async def retrain_model(
+    request: RetrainRequest, 
+    background_tasks: BackgroundTasks,
+    trainer: EnhancedModelTrainer = Depends(get_trainer)
+):
+    """
+    Trigger model retraining with optional AutoML optimization.
+    """
+    try:
+        # Validate parameters
+        if not 7 <= request.lookback_days <= 90:
+            raise HTTPException(status_code=400, detail="Lookback days must be between 7 and 90")
+        
+        # Validate features if provided
+        if request.features:
+            valid_features = trainer.feature_columns + trainer.technical_features
+            invalid_features = [f for f in request.features if f not in valid_features]
+            if invalid_features:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid features: {invalid_features}"
+                )
+        
+        # Validate model types
+        if request.model_types:
+            valid_types = ['random_forest', 'xgboost', 'lightgbm', 'gradient_boosting', 'neural_network']
+            invalid_types = [t for t in request.model_types if t not in valid_types]
+            if invalid_types:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid model types: {invalid_types}"
+                )
+        
+        # Check if training is already in progress
+        if trainer.training_in_progress:
+            return {
+                "status": "training_in_progress",
+                "message": "Model training is already in progress"
+            }
+        
+        # Update optimizer trials if specified
+        if request.optimization_trials != trainer.optimizer.n_trials:
+            trainer.optimizer.n_trials = request.optimization_trials
+        
+        # Trigger training in background
+        if request.use_automl:
+            background_tasks.add_task(
+                trainer.train_model_with_optimization,
+                lookback_days=request.lookback_days,
+                reason="Manual API trigger",
+                model_types=request.model_types,
+                use_ensemble=False
+            )
+            message = f"AutoML optimization started with {request.optimization_trials} trials"
+        else:
+            background_tasks.add_task(
+                trainer._train_simple_model,
+                lookback_days=request.lookback_days,
+                reason="Manual API trigger"
+            )
+            message = "Simple model training started"
+        
+        return {
+            "status": "success",
+            "message": message,
+            "parameters": {
+                "lookback_days": request.lookback_days,
+                "use_automl": request.use_automl,
+                "model_types": request.model_types or ['random_forest', 'xgboost', 'lightgbm']
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/model_status", response_model=OptimizationStatus)
+async def get_model_status(trainer: EnhancedModelTrainer = Depends(get_trainer)):
+    """
+    Get current model status and optimization history.
+    """
+    try:
+        return OptimizationStatus(
+            status="training_in_progress" if trainer.training_in_progress else "ready",
+            current_model=trainer.current_model_type,
+            last_training=trainer.last_train_time.isoformat() if trainer.last_train_time else None,
+            optimization_history=trainer.optimization_history[-10:]  # Last 10 optimizations
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/feature_importance")
+async def get_feature_importance(trainer: EnhancedModelTrainer = Depends(get_trainer)):
+    """
+    Get feature importance from the current model.
+    """
+    try:
+        importance = trainer.get_feature_importance()
+        if importance is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Feature importance not available for current model"
+            )
+        
+        # Sort by importance
+        sorted_importance = sorted(importance.items(), key=lambda x: x[1], reverse=True)
+        
+        return {
+            "model_type": trainer.current_model_type,
+            "feature_importance": [
+                {"feature": feat, "importance": imp} 
+                for feat, imp in sorted_importance
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/model_performance")
+async def get_model_performance(
+    hours: int = 24,
+    trainer: EnhancedModelTrainer = Depends(get_trainer)
+):
+    """
+    Get recent model performance metrics.
+    """
+    try:
+        performance = trainer.get_recent_model_performance(hours)
+        
+        # Load optimization results if available
+        optimization_metrics = None
+        if os.path.exists(trainer.optimization_results_path):
+            with open(trainer.optimization_results_path, 'r') as f:
+                opt_results = json.load(f)
+                optimization_metrics = {
+                    "accuracy": opt_results.get("accuracy"),
+                    "f1_score": opt_results.get("f1_score"),
+                    "training_samples": opt_results.get("samples_used")
+                }
+        
+        return {
+            "recent_performance": performance,
+            "evaluation_period_hours": hours,
+            "optimization_metrics": optimization_metrics,
+            "model_type": trainer.current_model_type
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/compare_models")
+async def compare_models(
+    model_types: List[str],
+    lookback_days: int = 30,
+    trials_per_model: int = 20,
+    trainer: EnhancedModelTrainer = Depends(get_trainer)
+):
+    """
+    Compare multiple model types and return performance comparison.
+    """
+    try:
+        # Validate model types
+        valid_types = ['random_forest', 'xgboost', 'lightgbm', 'gradient_boosting', 'neural_network']
+        invalid_types = [t for t in model_types if t not in valid_types]
+        if invalid_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid model types: {invalid_types}"
+            )
+        
+        # Prepare data
+        X, y, feature_columns = trainer.prepare_data(lookback_days)
+        if X is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Insufficient data for model comparison"
+            )
+        
+        # Create temporary optimizer for comparison
+        temp_optimizer = AdvancedHyperparameterOptimizer(n_trials=trials_per_model)
+        
+        # Run comparison
+        comparison_results = temp_optimizer.optimize(
+            X, y,
+            model_types=model_types,
+            eval_metric='f1'
+        )
+        
+        # Format results
+        formatted_results = []
+        for model_type, results in comparison_results.items():
+            formatted_results.append({
+                "model_type": model_type,
+                "best_score": results['best_value'],
+                "best_trial": results['best_trial'],
+                "best_params": results['best_params']
+            })
+        
+        # Sort by performance
+        formatted_results.sort(key=lambda x: x['best_score'], reverse=True)
+        
+        return {
+            "comparison_results": formatted_results,
+            "samples_used": len(X),
+            "features_used": len(feature_columns),
+            "recommendation": formatted_results[0]['model_type'] if formatted_results else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/optimization_history")
+async def get_optimization_history(
+    limit: int = 10,
+    trainer: EnhancedModelTrainer = Depends(get_trainer)
+):
+    """
+    Get historical optimization results.
+    """
+    try:
+        history = trainer.optimization_history[-limit:]
+        
+        return {
+            "history": history,
+            "total_optimizations": len(trainer.optimization_history)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# CLI interface for the integrated system
+def main():
+    """
+    Main entry point with CLI interface.
+    """
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="AutoML Trading Bot with Integrated Model Trainer")
+    parser.add_argument('--mode', choices=['train', 'trade', 'api', 'compare'], 
+                       default='trade', help='Operation mode')
+    parser.add_argument('--config', default='trading_config.json', 
+                       help='Configuration file path')
+    parser.add_argument('--lookback-days', type=int, default=30,
+                       help='Days of historical data for training')
+    parser.add_argument('--optimization-trials', type=int, default=100,
+                       help='Number of optimization trials')
+    parser.add_argument('--model-types', nargs='+', 
+                       default=['random_forest', 'xgboost', 'lightgbm'],
+                       help='Model types to optimize')
+    
+    args = parser.parse_args()
+    
+    # Load configuration
+    try:
+        with open(args.config, 'r') as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        print(f"Configuration file {args.config} not found. Using defaults.")
+        config = {
+            'use_automl': True,
+            'optimization_trials': args.optimization_trials,
+            'retrain_hours': 24,
+            'min_confidence': 0.65
+        }
+    
+    # Update config with CLI arguments
+    config['optimization_trials'] = args.optimization_trials
+    
+    if args.mode == 'train':
+        # Training mode - just train the model
+        print("Starting model training with AutoML optimization...")
+        
+        # Mock database manager for standalone training
+        class MockDBManager:
+            def log_system_event(self, **kwargs):
+                print(f"[LOG] {kwargs}")
+            
+            class pool:
+                @staticmethod
+                def get_connection():
+                    return None
+        
+        db_manager = MockDBManager()
+        trainer = EnhancedModelTrainer(db_manager, config)
+        
+        success = trainer.train_model_with_optimization(
+            lookback_days=args.lookback_days,
+            reason="CLI training",
+            model_types=args.model_types
+        )
+        
+        if success:
+            print(f"Training completed successfully!")
+            print(f"Best model: {trainer.current_model_type}")
+            
+            # Show feature importance
+            importance = trainer.get_feature_importance()
+            if importance:
+                print("\nFeature Importance:")
+                for feat, imp in sorted(importance.items(), key=lambda x: x[1], reverse=True)[:10]:
+                    print(f"  {feat}: {imp:.4f}")
+        else:
+            print("Training failed!")
+            
+    elif args.mode == 'trade':
+        # Trading mode - run the full bot
+        print("Starting AutoML Trading Bot...")
+        
+        global bot
+        bot = EnhancedTradingBotWithAutoML(config)
+        
+        try:
+            asyncio.run(bot.start())
+        except KeyboardInterrupt:
+            print("\nTrading bot stopped by user.")
+            
+    elif args.mode == 'api':
+        # API mode - start FastAPI server
+        print("Starting API server...")
+        
+        global bot
+        bot = EnhancedTradingBotWithAutoML(config)
+        
+        # Start bot in background
+        asyncio.create_task(bot.start())
+        
+        # Run FastAPI
+        import uvicorn
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+        
+    elif args.mode == 'compare':
+        # Model comparison mode
+        print(f"Comparing models: {args.model_types}")
+        
+        db_manager = MockDBManager()
+        trainer = EnhancedModelTrainer(db_manager, config)
+        
+        X, y, features = trainer.prepare_data(args.lookback_days)
+        if X is None:
+            print("Insufficient data for comparison")
+            return
+            
+        optimizer = AdvancedHyperparameterOptimizer(n_trials=args.optimization_trials)
+        results = optimizer.optimize(X, y, model_types=args.model_types)
+        
+        print("\nModel Comparison Results:")
+        print("-" * 50)
+        for model_type, result in sorted(results.items(), 
+                                       key=lambda x: x[1]['best_value'], 
+                                       reverse=True):
+            print(f"{model_type:20} Score: {result['best_value']:.4f}")
+            print(f"{'':20} Best params: {result['best_params']}")
+            print()
+
+
+if __name__ == "__main__":
+    main()
