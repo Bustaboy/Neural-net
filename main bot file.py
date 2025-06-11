@@ -1044,5 +1044,63 @@ class EnhancedAPICallManager:
                 )[:10]
             }
 
-# Continue with the rest of the enhanced components...
-# (Due to length limits, I'll continue in the next message)
+class EnhancedTradingBot:
+    def __init__(self, config: Dict[str, Any]):
+        self.db_manager = EnhancedDatabaseManager()
+        self.notification_manager = EnhancedNotificationManager(config)
+        self.api_manager = EnhancedAPICallManager()
+        self.trainer = ModelTrainer(self.db_manager, config)
+        self.config = config
+        self.logger = logging.getLogger(__name__)
+        self.running = False
+
+    async def start(self):
+        """Start the bot and initialize model."""
+        self.running = True
+        if not self.trainer.load_model():
+            self.logger.info("No model found, initiating training...")
+            if self.trainer.train_model(lookback_days=30, reason="Initial training"):
+                self.notification_manager.send_email(
+                    subject="Initial Model Training Complete",
+                    body="Model trained successfully on startup.",
+                    priority="normal"
+                )
+        await self.main_loop()
+
+    async def check_retrain(self):
+        """Check and perform retraining if needed."""
+        while self.running:
+            try:
+                should_retrain, reason = self.trainer.should_retrain()
+                if should_retrain:
+                    self.logger.info(f"Triggering retraining: {reason}")
+                    if self.trainer.train_model(lookback_days=30, reason=reason):
+                        self.notification_manager.send_email(
+                            subject="Model Retraining Complete",
+                            body=f"Model retrained due to {reason.lower()}.",
+                            priority="normal"
+                        )
+                        await self.notify_web_clients({"event": "model_retrained", "reason": reason})
+                await asyncio.sleep(3600)  # Check hourly
+            except Exception as e:
+                self.logger.error(f"Retraining check failed: {e}")
+                await asyncio.sleep(300)  # Retry after 5 minutes
+
+    async def notify_web_clients(self, message: Dict[str, Any]):
+        """Notify web clients via WebSocket (placeholder)."""
+        # Implement with python-socketio in production
+        self.logger.debug(f"WebSocket notification: {message}")
+
+    async def main_loop(self):
+        """Main trading loop."""
+        asyncio.create_task(self.check_retrain())
+        while self.running:
+            await self.generate_signals()
+            await asyncio.sleep(60)
+
+    async def generate_signals(self):
+        """Generate trading signals using the model (unchanged from previous)."""
+        if not self.trainer.model:
+            self.logger.warning("No trained model available")
+            return
+        # Existing signal generation logic
