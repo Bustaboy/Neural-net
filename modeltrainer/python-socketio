@@ -1,0 +1,7 @@
+from socketio import AsyncServer, ASGIApp
+
+sio = AsyncServer(async_mode='asgi', cors_allowed_origins='*')
+app.mount("/socket.io/", ASGIApp(sio))
+
+async def notify_web_clients(self, message: Dict[str, Any]):
+    await sio.emit('model_retrained', message)
