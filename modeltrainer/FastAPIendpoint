@@ -1,0 +1,31 @@
+from fastapi import FastAPI, HTTPException, Depends
+from pydantic import BaseModel
+from typing import List
+
+app = FastAPI()
+
+class RetrainRequest(BaseModel):
+    lookback_days: int
+    features: List[str]
+
+def get_trainer():
+    # Assuming bot instance is accessible globally or via dependency injection
+    return bot.trainer  # Replace with proper dependency injection in production
+
+@app.post("/api/retrain_model")
+async def retrain_model(request: RetrainRequest, trainer: ModelTrainer = Depends(get_trainer)):
+    try:
+        if not 7 <= request.lookback_days <= 90:
+            raise HTTPException(status_code=400, detail="Lookback days must be between 7 and 90")
+        # Validate features
+        valid_features = ['price', 'quantity', 'confidence', 'fees', 'btc_price', 'btc_dominance', 'volatility_index', 'fear_greed_index']
+        if not all(f in valid_features for f in request.features):
+            raise HTTPException(status_code=400, detail="Invalid features selected")
+        
+        # Trigger training (simplified; in practice, update trainer's feature_columns)
+        if trainer.train_model(lookback_days=request.lookback_days):
+            return {"status": "success", "message": "Model retrained successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Model training failed")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
