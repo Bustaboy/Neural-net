@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Enhanced Neural Trading Matrix - Advanced Cryptocurrency Trading Bot">
+    <title>NEURAL TRADING MATRIX v3.0</title>
+    
+    <!-- External Dependencies -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js"></script>
+    
+    <!-- Internal Styles -->
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/cyberpunk.css">
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="loading-screen">
+        <div class="loading-content">
+            <h1 class="glitch" data-text="INITIALIZING">INITIALIZING</h1>
+            <div class="loading-bar">
+                <div class="loading-progress"></div>
+            </div>
+            <p class="loading-status">Establishing neural link...</p>
+        </div>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal">
+        <div class="modal-content login-form">
+            <h2 class="modal-title">NEURAL ACCESS REQUIRED</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">USERNAME</label>
+                    <input type="text" id="username" name="username" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="password">PASSWORD</label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="rememberMe" name="rememberMe">
+                        <span>REMEMBER NEURAL SIGNATURE</span>
+                    </label>
+                </div>
+                <button type="submit" class="btn btn-primary">AUTHENTICATE</button>
+                <div id="loginError" class="error-message"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="app" class="app-container" style="display: none;">
+        <!-- Header -->
+        <header class="main-header">
+            <div class="header-content">
+                <h1 class="app-title glitch" data-text="NEURAL TRADING MATRIX">
+                    NEURAL TRADING MATRIX
+                </h1>
+                <div class="header-info">
+                    <span class="version">v3.0.0</span>
+                    <span class="status-indicator" id="connectionStatus">
+                        <span class="status-dot"></span>
+                        <span class="status-text">OFFLINE</span>
+                    </span>
+                    <button class="btn-icon" id="settingsBtn" title="Settings">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 15.5A3.5 3.5 0 0 1 8.5 12A3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5a3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97c0-.33-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1c0 .33.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64"/>
+                        </svg>
+                    </button>
+                    <button class="btn-icon" id="logoutBtn" title="Logout">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M16 17v-3H9v-4h7V7l5 5l-5 5M14 2a2 2 0 0 1 2 2v2h-2V4H5v16h9v-2h2v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Alert Banner -->
+        <div id="alertBanner" class="alert-banner" style="display: none;">
+            <span class="alert-icon">⚠️</span>
+            <span class="alert-message" id="alertMessage"></span>
+            <button class="alert-close" onclick="hideAlert()">×</button>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Trading Controls -->
+            <section class="control-panel">
+                <h2 class="section-title">TRADING CONTROL MATRIX</h2>
+                <div class="control-grid">
+                    <div class="control-group">
+                        <label>TRADING MODE</label>
+                        <div class="toggle-group">
+                            <input type="radio" id="modeTestnet" name="tradingMode" value="testnet" checked>
+                            <label for="modeTestnet" class="toggle-label">TESTNET</label>
+                            <input type="radio" id="modeLive" name="tradingMode" value="live">
+                            <label for="modeLive" class="toggle-label danger">LIVE</label>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>BOT STATUS</label>
+                        <div class="status-display" id="botStatus">
+                            <span class="status-value">OFFLINE</span>
+                            <span class="status-detail">Ready to initialize</span>
+                        </div>
+                    </div>
+                    <div class="control-actions">
+                        <button class="btn btn-success" id="startBtn" disabled>
+                            INITIALIZE TRADING
+                        </button>
+                        <button class="btn btn-danger" id="stopBtn" disabled>
+                            TERMINATE TRADING
+                        </button>
+                        <button class="btn btn-secondary" id="emergencyStopBtn">
+                            EMERGENCY STOP
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Market Intelligence Dashboard -->
+            <section class="dashboard-grid">
+                <!-- Performance Metrics -->
+                <div class="dashboard-card">
+                    <h3 class="card-title">PERFORMANCE METRICS</h3>
+                    <div class="metrics-grid">
+                        <div class="metric">
+                            <span class="metric-label">DAILY P&L</span>
+                            <span class="metric-value" id="dailyPnl">$0.00</span>
+                            <span class="metric-change" id="dailyPnlChange">0.00%</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">TOTAL P&L</span>
+                            <span class="metric-value" id="totalPnl">$0.00</span>
+                            <span class="metric-change" id="totalPnlChange">0.00%</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">WIN RATE</span>
+                            <span class="metric-value" id="winRate">0%</span>
+                            <span class="metric-detail" id="winRateDetail">0/0 trades</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">SHARPE RATIO</span>
+                            <span class="metric-value" id="sharpeRatio">0.00</span>
+                            <span class="metric-detail">Risk-adjusted returns</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Market Intelligence -->
+                <div class="dashboard-card">
+                    <h3 class="card-title">MARKET INTELLIGENCE</h3>
+                    <div class="intelligence-grid">
+                        <div class="intel-item">
+                            <span class="intel-label">CYCLE PHASE</span>
+                            <span class="intel-value" id="cyclePhase">ANALYZING...</span>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="cycleProgress"></div>
+                            </div>
+                        </div>
+                        <div class="intel-item">
+                            <span class="intel-label">BTC DOMINANCE</span>
+                            <span class="intel-value" id="btcDominance">0%</span>
+                            <span class="intel-trend" id="dominanceTrend">→</span>
+                        </div>
+                        <div class="intel-item">
+                            <span class="intel-label">VOLATILITY</span>
+                            <span class="intel-value" id="volatilityRegime">MEDIUM</span>
+                            <div class="volatility-meter">
+                                <div class="volatility-level" id="volatilityLevel"></div>
+                            </div>
+                        </div>
+                        <div class="intel-item">
+                            <span class="intel-label">SENTIMENT</span>
+                            <span class="intel-value" id="marketSentiment">NEUTRAL</span>
+                            <div class="sentiment-gauge" id="sentimentGauge"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Positions -->
+                <div class="dashboard-card full-width">
+                    <h3 class="card-title">ACTIVE POSITIONS</h3>
+                    <div class="positions-table-wrapper">
+                        <table class="positions-table" id="positionsTable">
+                            <thead>
+                                <tr>
+                                    <th>SYMBOL</th>
+                                    <th>SIDE</th>
+                                    <th>QUANTITY</th>
+                                    <th>ENTRY</th>
+                                    <th>CURRENT</th>
+                                    <th>P&L</th>
+                                    <th>DURATION</th>
+                                    <th>ACTIONS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="positionsBody">
+                                <tr>
+                                    <td colspan="8" class="empty-message">No active positions</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Trading Charts -->
+                <div class="dashboard-card">
+                    <h3 class="card-title">P&L ANALYSIS</h3>
+                    <div class="chart-container">
+                        <canvas id="pnlChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="dashboard-card">
+                    <h3 class="card-title">PORTFOLIO EVOLUTION</h3>
+                    <div class="chart-container">
+                        <canvas id="portfolioChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- System Logs -->
+                <div class="dashboard-card full-width">
+                    <h3 class="card-title">NEURAL ACTIVITY LOG</h3>
+                    <div class="log-viewer" id="logViewer">
+                        <div class="log-entry info">
+                            <span class="log-time">00:00:00</span>
+                            <span class="log-level">[INFO]</span>
+                            <span class="log-message">Neural Trading Matrix initialized</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Settings Modal -->
+        <div id="settingsModal" class="modal">
+            <div class="modal-content settings-form">
+                <div class="modal-header">
+                    <h2 class="modal-title">SYSTEM CONFIGURATION</h2>
+                    <button class="modal-close" onclick="closeSettings()">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="settings-tabs">
+                        <button class="tab-btn active" data-tab="trading">Trading</button>
+                        <button class="tab-btn" data-tab="risk">Risk Management</button>
+                        <button class="tab-btn" data-tab="intelligence">Intelligence</button>
+                        <button class="tab-btn" data-tab="notifications">Notifications</button>
+                    </div>
+                    
+                    <!-- Trading Settings -->
+                    <div class="tab-content active" id="tradingTab">
+                        <h3>Trading Configuration</h3>
+                        <div class="settings-grid">
+                            <div class="setting-group">
+                                <label>Position Size (%)</label>
+                                <input type="number" id="positionSize" min="0.5" max="5" step="0.1" value="2.0">
+                                <small>Percentage of capital per trade</small>
+                            </div>
+                            <div class="setting-group">
+                                <label>Max Positions</label>
+                                <input type="number" id="maxPositions" min="1" max="10" value="5">
+                                <small>Maximum concurrent positions</small>
+                            </div>
+                            <div class="setting-group">
+                                <label>Take Profit (%)</label>
+                                <input type="number" id="takeProfit" min="1" max="20" step="0.5" value="4.0">
+                                <small>Base profit target</small>
+                            </div>
+                            <div class="setting-group">
+                                <label>Stop Loss (%)</label>
+                                <input type="number" id="stopLoss" min="0.5" max="10" step="0.1" value="2.5">
+                                <small>Maximum loss per trade</small>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <label>Trading Symbols</label>
+                            <div class="symbol-selector">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" value="BTCUSDT" checked>
+                                    <span>BTCUSDT</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" value="ETHUSDT" checked>
+                                    <span>ETHUSDT</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" value="ADAUSDT" checked>
+                                    <span>ADAUSDT</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" value="DOGEUSDT">
+                                    <span>DOGEUSDT</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Risk Management Settings -->
+                    <div class="tab-content" id="riskTab">
+                        <h3>Risk Management</h3>
+                        <div class="settings-grid">
+                            <div class="setting-group">
+                                <label>Daily Loss Limit (%)</label>
+                                <input type="number" id="dailyLossLimit" min="1" max="10" step="0.5" value="3.0">
+                                <small>Stop trading if daily loss exceeds</small>
+                            </div>
+                            <div class="setting-group">
+                                <label>Max Drawdown (%)</label>
+                                <input type="number" id="maxDrawdown" min="5" max="30" step="1" value="15.0">
+                                <small>Emergency stop threshold</small>
+                            </div>
+                            <div class="setting-group">
+                                <label>Consecutive Losses</label>
+                                <input type="number" id="maxConsecutiveLosses" min="3" max="10" value="5">
+                                <small>Pause after N consecutive losses</small>
+                            </div>
+                            <div class="setting-group">
+                                <label>Emergency Fund (%)</label>
+                                <input type="number" id="emergencyFund" min="5" max="30" step="5" value="10.0">
+                                <small>Reserve capital percentage</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Market Intelligence Settings -->
+                    <div class="tab-content" id="intelligenceTab">
+                        <h3>Market Intelligence</h3>
+                        <div class="settings-grid">
+                            <div class="setting-group">
+                                <label class="switch-label">
+                                    <input type="checkbox" id="cycleDetection" checked>
+                                    <span class="switch"></span>
+                                    <span>Cycle Detection</span>
+                                </label>
+                                <small>Detect market cycles automatically</small>
+                            </div>
+                            <div class="setting-group">
+                                <label class="switch-label">
+                                    <input type="checkbox" id="dominanceTrading" checked>
+                                    <span class="switch"></span>
+                                    <span>Dominance Trading</span>
+                                </label>
+                                <small>Trade based on BTC dominance</small>
+                            </div>
+                            <div class="setting-group">
+                                <label class="switch-label">
+                                    <input type="checkbox" id="volatilityAdaptation" checked>
+                                    <span class="switch"></span>
+                                    <span>Volatility Adaptation</span>
+                                </label>
+                                <small>Adjust strategy to volatility</small>
+                            </div>
+                            <div class="setting-group">
+                                <label class="switch-label">
+                                    <input type="checkbox" id="sentimentAnalysis" checked>
+                                    <span class="switch"></span>
+                                    <span>Sentiment Analysis</span>
+                                </label>
+                                <small>Include market sentiment signals</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Notification Settings -->
+                    <div class="tab-content" id="notificationsTab">
+                        <h3>Notifications</h3>
+                        <div class="settings-grid">
+                            <div class="setting-group">
+                                <label class="switch-label">
+                                    <input type="checkbox" id="emailNotifications">
+                                    <span class="switch"></span>
+                                    <span>Email Notifications</span>
+                                </label>
+                                <small>Send trading alerts via email</small>
+                            </div>
+                            <div class="setting-group">
+                                <label>Profit Alert ($)</label>
+                                <input type="number" id="profitThreshold" min="10" max="1000" step="10" value="100">
+                                <small>Alert when profit exceeds</small>
+                            </div>
+                            <div class="setting-group">
+                                <label>Loss Alert ($)</label>
+                                <input type="number" id="lossThreshold" min="10" max="500" step="10" value="50">
+                                <small>Alert when loss exceeds</small>
+                            </div>
+                            <div class="setting-group">
+                                <label class="switch-label">
+                                    <input type="checkbox" id="dailyReports" checked>
+                                    <span class="switch"></span>
+                                    <span>Daily Reports</span>
+                                </label>
+                                <small>Send daily performance summary</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+                    <button class="btn btn-primary" onclick="saveSettings()">Save Configuration</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/js/config.js"></script>
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/websocket.js"></script>
+    <script src="/static/js/charts.js"></script>
+    <script src="/static/js/ui.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

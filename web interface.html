@@ -1,0 +1,89 @@
+// Add WebSocket support for real-time updates
+class TradingWebSocket {
+    constructor(url) {
+        this.url = url;
+        this.ws = null;
+        this.reconnectInterval = 5000;
+        this.shouldReconnect = true;
+    }
+    
+    connect() {
+        try {
+            this.ws = new WebSocket(this.url);
+            
+            this.ws.onopen = () => {
+                console.log('WebSocket connected');
+                this.onConnect();
+            };
+            
+            this.ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                this.onMessage(data);
+            };
+            
+            this.ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                this.onError(error);
+            };
+            
+            this.ws.onclose = () => {
+                if (this.shouldReconnect) {
+                    setTimeout(() => this.connect(), this.reconnectInterval);
+                }
+            };
+        } catch (error) {
+            console.error('WebSocket connection failed:', error);
+        }
+    }
+    
+    send(data) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(data));
+        }
+    }
+    
+    close() {
+        this.shouldReconnect = false;
+        if (this.ws) {
+            this.ws.close();
+        }
+    }
+}
+
+// Add configuration management
+class ConfigurationManager {
+    constructor() {
+        this.config = null;
+        this.callbacks = [];
+    }
+    
+    async loadConfig() {
+        try {
+            const response = await fetch('/api/config', {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+                }
+            });
+            
+            if (response.ok) {
+                this.config = await response.json();
+                this.notifyCallbacks();
+            }
+        } catch (error) {
+            console.error('Failed to load config:', error);
+        }
+    }
+    
+    updateConfig(updates) {
+        this.config = { ...this.config, ...updates };
+        this.notifyCallbacks();
+    }
+    
+    onChange(callback) {
+        this.callbacks.push(callback);
+    }
+    
+    notifyCallbacks() {
+        this.callbacks.forEach(cb => cb(this.config));
+    }
+}

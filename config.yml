@@ -1,0 +1,487 @@
+# Enhanced Trading Bot Configuration v3.0
+# Production-ready configuration with all features
+
+# System Configuration
+system:
+  environment: "production"  # development, staging, production
+  timezone: "UTC"
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  
+  # Performance settings
+  max_workers: 8
+  event_loop: "uvloop"  # uvloop (Linux/Mac) or asyncio
+  
+  # Monitoring
+  metrics_enabled: true
+  metrics_port: 9090
+  health_check_interval: 60  # seconds
+
+# API Configuration
+api:
+  # Binance credentials (use environment variables)
+  binance_api_key: "${BINANCE_API_KEY}"
+  binance_api_secret: "${BINANCE_API_SECRET}"
+  
+  # Testnet configuration
+  testnet:
+    enabled: false  # Set to true for testing
+    api_key: "${BINANCE_TESTNET_API_KEY}"
+    api_secret: "${BINANCE_TESTNET_SECRET}"
+  
+  # API settings
+  timeout: 30  # seconds
+  max_retries: 3
+  retry_delay: 5  # seconds
+  
+  # Rate limiting
+  requests_per_minute: 800  # Conservative limit
+  weight_per_minute: 1000
+  orders_per_second: 8
+
+# Trading Configuration
+trading:
+  # Trading pairs
+  symbols:
+    - symbol: "BTCUSDT"
+      enabled: true
+      allocation_pct: 40
+      min_order_size: 0.00001
+    - symbol: "ETHUSDT"
+      enabled: true
+      allocation_pct: 30
+      min_order_size: 0.0001
+    - symbol: "ADAUSDT"
+      enabled: true
+      allocation_pct: 20
+      min_order_size: 1
+    - symbol: "DOGEUSDT"
+      enabled: true
+      allocation_pct: 10
+      min_order_size: 1
+  
+  # Capital management
+  initial_capital: 10000.0
+  base_currency: "USDT"
+  
+  # Position sizing
+  position_size_pct: 2.0  # Base position size
+  min_position_size: 10.0  # Minimum $10
+  max_position_size_pct: 5.0  # Maximum 5% per trade
+  max_positions: 5  # Maximum concurrent positions
+  
+  # Order execution
+  order_type: "MARKET"  # MARKET or LIMIT
+  slippage_tolerance: 0.001  # 0.1% slippage
+  
+  # Fees
+  maker_fee: 0.001  # 0.1%
+  taker_fee: 0.001  # 0.1%
+
+# Strategy Configuration
+strategy:
+  # Base parameters
+  base_profit_target: 0.04  # 4% base target
+  min_profit_target: 0.015  # 1.5% minimum
+  max_profit_target: 0.12  # 12% maximum
+  
+  # Risk parameters
+  stop_loss: 0.025  # 2.5% stop loss
+  trailing_stop_activation: 0.015  # Activate at 1.5% profit
+  trailing_stop_distance: 0.01  # 1% trailing distance
+  
+  # Entry conditions
+  confidence_threshold: 0.7  # 70% minimum confidence
+  min_volume_ratio: 1.2  # 20% above average volume
+  
+  # Exit conditions
+  max_hold_time_hours: 720  # 30 days maximum
+  time_based_exit_hours: 168  # 7 days for time-based exit
+  
+  # Strategy selection
+  allowed_strategies:
+    - "trend_following"
+    - "mean_reversion"
+    - "momentum"
+    - "scalping"
+    - "ml_ensemble"
+  
+  # Dynamic adjustments
+  volatility_adjustment: true
+  cycle_aware_sizing: true
+  correlation_hedging: true
+  sentiment_weighting: true
+
+# Market Intelligence Configuration
+market_intelligence:
+  # Cycle Detection
+  cycle_detection:
+    enabled: true
+    sensitivity: 0.7  # Detection sensitivity (0.5-1.0)
+    lookback_days: 90  # Historical data for analysis
+    
+    # Cycle phases configuration
+    phases:
+      accumulation:
+        volatility_max: 0.025
+        trend_strength_max: 0.3
+        volume_ratio_max: 0.9
+      markup:
+        volatility_range: [0.025, 0.05]
+        trend_strength_min: 0.6
+        volume_ratio_min: 1.2
+      distribution:
+        volatility_min: 0.05
+        trend_strength_max: 0.4
+        volume_ratio_min: 1.5
+      markdown:
+        volatility_min: 0.06
+        trend_strength_max: -0.5
+        drawdown_min: 0.3
+  
+  # Bitcoin Dominance Trading
+  dominance_trading:
+    enabled: true
+    update_frequency_minutes: 15
+    
+    # Dominance thresholds
+    thresholds:
+      extreme_btc_season: 65
+      btc_season: 58
+      neutral: 50
+      early_alt_season: 47
+      alt_season: 43
+      extreme_alt_season: 40
+    
+    # Allocation strategies per phase
+    allocation_strategy:
+      extreme_btc_season:
+        btc_allocation: 0.60
+        eth_allocation: 0.30
+        alt_allocation: 0.10
+      btc_season:
+        btc_allocation: 0.50
+        eth_allocation: 0.35
+        alt_allocation: 0.15
+      neutral:
+        btc_allocation: 0.40
+        eth_allocation: 0.35
+        alt_allocation: 0.25
+      early_alt_season:
+        btc_allocation: 0.30
+        eth_allocation: 0.40
+        alt_allocation: 0.30
+      alt_season:
+        btc_allocation: 0.25
+        eth_allocation: 0.35
+        alt_allocation: 0.40
+      extreme_alt_season:
+        btc_allocation: 0.20
+        eth_allocation: 0.30
+        alt_allocation: 0.50
+  
+  # Volatility Detection
+  volatility_detection:
+    enabled: true
+    lookback_periods: 30
+    
+    # Volatility regimes
+    regimes:
+      very_low:
+        threshold: 0.01
+        position_multiplier: 1.5
+        profit_multiplier: 0.7
+      low:
+        threshold: 0.02
+        position_multiplier: 1.2
+        profit_multiplier: 0.85
+      medium:
+        threshold: 0.04
+        position_multiplier: 1.0
+        profit_multiplier: 1.0
+      high:
+        threshold: 0.06
+        position_multiplier: 0.8
+        profit_multiplier: 1.3
+      very_high:
+        threshold: 0.08
+        position_multiplier: 0.6
+        profit_multiplier: 1.6
+      extreme:
+        threshold: 0.10
+        position_multiplier: 0.4
+        profit_multiplier: 2.0
+  
+  # Sentiment Analysis
+  sentiment_analysis:
+    enabled: true
+    
+    # Data sources
+    sources:
+      fear_greed_index:
+        enabled: true
+        weight: 0.25
+        api_url: "https://api.alternative.me/fng/"
+      google_trends:
+        enabled: true
+        weight: 0.25
+        keywords: ["bitcoin", "cryptocurrency", "crypto"]
+      social_volume:
+        enabled: true
+        weight: 0.25
+      news_sentiment:
+        enabled: true
+        weight: 0.25
+    
+    # Sentiment thresholds
+    thresholds:
+      extreme_fear: 20
+      fear: 40
+      neutral: 60
+      greed: 80
+      extreme_greed: 95
+
+# Risk Management Configuration
+risk_management:
+  # Portfolio limits
+  max_portfolio_risk_pct: 10.0  # Maximum 10% portfolio risk
+  max_drawdown_pct: 15.0  # Emergency stop at 15% drawdown
+  
+  # Daily limits
+  daily_loss_limit_pct: 3.0  # Stop trading at 3% daily loss
+  daily_trade_limit: 20  # Maximum trades per day
+  
+  # Position limits
+  max_position_risk_pct: 2.0  # Maximum 2% risk per position
+  max_correlated_positions: 3  # Limit correlated assets
+  
+  # Loss control
+  max_consecutive_losses: 5  # Stop after 5 consecutive losses
+  consecutive_loss_cooldown: 3600  # 1 hour cooldown
+  
+  # Capital preservation
+  emergency_fund_pct: 10.0  # Keep 10% as emergency reserve
+  
+  # Correlation limits
+  correlation_threshold: 0.7  # Assets with >0.7 correlation
+  max_correlation_exposure: 0.5  # Maximum 50% in correlated assets
+  
+  # Cycle-specific risk limits
+  cycle_risk_limits:
+    accumulation:
+      max_drawdown_pct: 5.0
+      position_limit_pct: 3.0
+      daily_loss_limit_pct: 2.0
+      max_positions: 3
+    markup:
+      max_drawdown_pct: 8.0
+      position_limit_pct: 5.0
+      daily_loss_limit_pct: 4.0
+      max_positions: 5
+    distribution:
+      max_drawdown_pct: 6.0
+      position_limit_pct: 4.0
+      daily_loss_limit_pct: 3.0
+      max_positions: 4
+    markdown:
+      max_drawdown_pct: 3.0
+      position_limit_pct: 2.0
+      daily_loss_limit_pct: 1.0
+      max_positions: 2
+
+# Machine Learning Configuration
+ml_config:
+  enabled: true
+  
+  # Model settings
+  model_type: "ensemble"  # ensemble, random_forest, xgboost, lightgbm
+  
+  # Training parameters
+  retrain_frequency_hours: 24
+  min_training_samples: 1000
+  test_split_ratio: 0.2
+  cross_validation_folds: 5
+  
+  # Feature configuration
+  features:
+    # Technical indicators
+    technical:
+      - "rsi_14"
+      - "macd_signal"
+      - "bollinger_bands"
+      - "atr_14"
+      - "volume_ratio"
+      - "price_momentum"
+    
+    # Market structure
+    market:
+      - "btc_dominance"
+      - "market_cap_rank"
+      - "volume_24h_rank"
+      - "correlation_btc"
+      - "correlation_spy"
+    
+    # Cycle features
+    cycle:
+      - "halving_days"
+      - "cycle_position"
+      - "seasonal_factor"
+      - "market_regime"
+    
+    # Sentiment features
+    sentiment:
+      - "fear_greed_index"
+      - "social_volume_score"
+      - "google_trends_score"
+      - "news_sentiment_score"
+  
+  # Model hyperparameters
+  hyperparameters:
+    random_forest:
+      n_estimators: 100
+      max_depth: 10
+      min_samples_split: 5
+      min_samples_leaf: 2
+    xgboost:
+      n_estimators: 100
+      max_depth: 6
+      learning_rate: 0.1
+      subsample: 0.8
+    lightgbm:
+      n_estimators: 100
+      num_leaves: 31
+      learning_rate: 0.1
+      feature_fraction: 0.9
+  
+  # Performance thresholds
+  min_accuracy: 0.65  # Minimum 65% accuracy
+  min_precision: 0.60  # Minimum 60% precision
+  min_recall: 0.55  # Minimum 55% recall
+  feature_importance_threshold: 0.05
+
+# Notification Configuration
+notifications:
+  # Email notifications
+  email:
+    enabled: true
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    use_tls: true
+    sender: "${EMAIL_SENDER}"
+    recipients:
+      - "${EMAIL_RECIPIENT}"
+    
+    # Email triggers
+    triggers:
+      trade_execution: true
+      daily_report: true
+      risk_alerts: true
+      system_errors: true
+      performance_milestones: true
+  
+  # Webhook notifications
+  webhooks:
+    enabled: false
+    endpoints:
+      - url: "${WEBHOOK_URL}"
+        events: ["trade", "alert", "error"]
+        retry_count: 3
+  
+  # Alert thresholds
+  alerts:
+    profit_threshold: 100.0  # Alert on $100+ single trade profit
+    loss_threshold: 50.0  # Alert on $50+ single trade loss
+    daily_profit_threshold: 500.0  # Alert on $500+ daily profit
+    daily_loss_threshold: 200.0  # Alert on $200+ daily loss
+    drawdown_threshold: 5.0  # Alert on 5%+ drawdown
+    win_streak_threshold: 10  # Alert on 10+ consecutive wins
+    loss_streak_threshold: 5  # Alert on 5+ consecutive losses
+
+# Performance Tracking
+performance:
+  # Metrics tracking
+  track_metrics: true
+  metrics_interval_seconds: 60
+  
+  # Database settings
+  database:
+    type: "sqlite"  # sqlite, postgresql, mysql
+    connection_string: "sqlite:///enhanced_trading_bot.db"
+    pool_size: 5
+    max_overflow: 10
+  
+  # Data retention
+  retention:
+    trades_days: 365  # Keep trades for 1 year
+    metrics_days: 90  # Keep metrics for 90 days
+    logs_days: 30  # Keep logs for 30 days
+    cleanup_interval_hours: 24
+  
+  # Export settings
+  export:
+    enabled: true
+    format: "csv"  # csv, json, parquet
+    interval_hours: 24
+    destination: "./exports/"
+
+# Security Configuration
+security:
+  # API security
+  api_key_rotation_days: 90
+  require_ip_whitelist: false
+  allowed_ips: []
+  
+  # Authentication
+  jwt_secret: "${JWT_SECRET}"
+  jwt_expiration_hours: 24
+  
+  # Encryption
+  encrypt_sensitive_data: true
+  encryption_key: "${ENCRYPTION_KEY}"
+  
+  # Audit logging
+  audit_logging: true
+  audit_log_file: "logs/audit.log"
+
+# Backtesting Configuration
+backtesting:
+  enabled: false
+  
+  # Data settings
+  historical_data_source: "binance"  # binance, csv, database
+  start_date: "2022-01-01"
+  end_date: "2023-12-31"
+  
+  # Simulation settings
+  initial_capital: 10000.0
+  commission: 0.001  # 0.1%
+  slippage: 0.0005  # 0.05%
+  
+  # Performance metrics
+  calculate_sharpe: true
+  calculate_sortino: true
+  calculate_max_drawdown: true
+  calculate_calmar: true
+
+# Advanced Features
+advanced:
+  # Multi-exchange support
+  multi_exchange:
+    enabled: false
+    exchanges: ["binance", "kraken", "coinbase"]
+  
+  # Arbitrage detection
+  arbitrage:
+    enabled: false
+    min_profit_pct: 0.5  # 0.5% minimum profit
+    max_exposure_pct: 20.0  # 20% maximum exposure
+  
+  # DeFi integration
+  defi:
+    enabled: false
+    protocols: ["uniswap", "aave", "compound"]
+  
+  # Social trading
+  social_trading:
+    enabled: false
+    copy_trading: false
+    signal_sharing: false
