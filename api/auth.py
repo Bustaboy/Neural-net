@@ -1,6 +1,7 @@
 # api/auth.py - Enhanced JWT implementation
 from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 from datetime import timedelta
+from pyotp import TOTP
 import bcrypt
 
 class AuthManager:
@@ -28,3 +29,17 @@ class AuthManager:
             'refresh_token': refresh_token,
             'token_type': 'Bearer'
         }
+
+    def enable_2fa(self, user_id: int) -> str:
+        secret = TOTP().provisioning_uri()
+        self.db_manager.execute(
+            "UPDATE users SET secret = ? WHERE id = ?",
+            (secret, user_id)
+        )
+        return secret
+
+    def verify_2fa(self, user_id: int, code: str) -> bool:
+        secret = self.db_manager.fetch_one(
+            "SELECT secret FROM users WHERE id = ?", (user_id,)
+        )[0]
+        return TOTP(secret).verify(code)
