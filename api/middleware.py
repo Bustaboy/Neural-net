@@ -3,6 +3,8 @@ from fastapi import FastAPI, HTTPException, Request
 from flask_jwt_extended import get_jwt_identity
 from config import ConfigManager
 from core.database import EnhancedDatabaseManager
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 db_manager = EnhancedDatabaseManager()
 
@@ -25,3 +27,10 @@ def setup_middleware(app: FastAPI):
         return user_id
 
     app.dependency_overrides['subscription_middleware'] = subscription_middleware
+
+def setup_rate_limiter(app: FastAPI):
+    limiter = Limiter(
+        app,
+        key_func=lambda: get_jwt_identity() or get_remote_address(),
+        default_limits=["60 per minute"]
+    )
