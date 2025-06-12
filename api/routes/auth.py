@@ -1,13 +1,14 @@
 # api/routes/auth.py
 from fastapi import APIRouter, HTTPException, FastAPI
 from pydantic import BaseModel
-from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import get_jwt_identity, create_access_token
 from api.auth import AuthManager
 from core.database import EnhancedDatabaseManager
 
 router = APIRouter(prefix="/auth")
-app = FastAPI()  # Temporary for Flask compatibility; replace with your app
-auth_manager = AuthManager(app, EnhancedDatabaseManager())
+app = FastAPI()  # Temporary; replace with your app
+db_manager = EnhancedDatabaseManager()
+auth_manager = AuthManager(app, db_manager)
 
 class LoginRequest(BaseModel):
     email: str
