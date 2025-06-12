@@ -34,3 +34,16 @@ async def verify_email(token: str):
         (identity['user_id'],)
     )
     return {"status": "email_verified"}
+
+class UserPreferences(BaseModel):
+    theme: str
+    notifications_enabled: bool
+
+@router.put("/preferences")
+async def update_preferences(prefs: UserPreferences, user_id: int = Depends(get_jwt_identity)):
+    db_manager.execute(
+        "INSERT INTO user_preferences (user_id, theme, notifications_enabled) VALUES (?, ?, ?)
+         ON CONFLICT (user_id) DO UPDATE SET theme = ?, notifications_enabled = ?",
+        (user_id, prefs.theme, prefs.notifications_enabled, prefs.theme, prefs.notifications_enabled)
+    )
+    return {"status": "preferences_updated"}
