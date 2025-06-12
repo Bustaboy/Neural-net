@@ -1,259 +1,232 @@
+# docker-compose.yml
 version: '3.8'
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: trading-postgres
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=${DB_USER:-trading_bot}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=${DB_NAME:-trading_bot_db}
-      - POSTGRES_INITDB_ARGS=--encoding=UTF8 --locale=C
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./scripts/init_database.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
-      - ./scripts/optimize_database.sql:/docker-entrypoint-initdb.d/02-optimize.sql:ro
-    ports:
-      - "5432:5432"
-    networks:
-      - trading-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-trading_bot}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-        reservations:
-          memory: 512M
-
-  # Redis Cache
-  redis:
-    image: redis:7-alpine
-    container_name: trading-redis
-    restart: unless-stopped
-    command: >
-      redis-server
-      --appendonly yes
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-    volumes:
-      - redis-data:/data
-    ports:
-      - "6379:6379"
-    networks:
-      - trading-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-
-  # Main Trading Bot
-  trading-bot:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      cache_from:
-        - ${DOCKER_REGISTRY}/trading-bot:latest
-    image: ${DOCKER_REGISTRY}/trading-bot:latest
-    container_name: trading-bot
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
-      - REDIS_URL=redis://redis:6379/0
-    volumes:
-      - ./config:/app/config:ro
-      - ./logs:/app/logs
-      - ./models:/app/models
-      - ./data:/app/data
-    networks:
-      - trading-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-          cpus: '2'
-        reservations:
-          memory: 1G
-
-  # API Server
-  api-server:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.api
-    image: ${DOCKER_REGISTRY}/trading-api:latest
-    container_name: trading-api
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
-      - REDIS_URL=redis://redis:6379/0
-      - FLASK_ENV=production
-    ports:
-      - "5000:5000"
-    networks:
-      - trading-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: '1'
-
-  # Celery Worker
-  celery-worker:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-    image: ${DOCKER_REGISTRY}/trading-bot:latest
-    container_name: celery-worker
-    restart: unless-stopped
-    command: celery -A tasks.celery_app worker --loglevel=info --concurrency=2
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
-      - REDIS_URL=redis://redis:6379/0
-    volumes:
-      - ./logs:/app/logs
-      - ./models:/app/models
-    networks:
-      - trading-network
-    depends_on:
-      - redis
-      - postgres
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: '1'
-
-  # Nginx (Production only)
+  # Nginx Load Balancer
   nginx:
     image: nginx:alpine
-    container_name: trading-nginx
-    restart: unless-stopped
+    container_name: trading_nginx
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./docker/nginx/ssl:/etc/nginx/ssl:ro
-      - ./web/static:/usr/share/nginx/html/static:ro
-    networks:
-      - trading-network
     depends_on:
-      - api-server
+      - frontend
+      - api
+    networks:
+      - trading_network
+    restart: unless-stopped
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./web
+      dockerfile: ../docker/Dockerfile.client
+    container_name: trading_frontend
+    environment:
+      - REACT_APP_API_URL=http://api:5000
+      - REACT_APP_WS_URL=ws://api:5000/socket.io
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    networks:
+      - trading_network
+    restart: unless-stopped
+
+  # Flask/FastAPI Backend
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: trading_api
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_SECRET=${BINANCE_SECRET}
+      - FLASK_ENV=production
+    volumes:
+      - .:/app
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - trading_network
+    restart: unless-stopped
     deploy:
+      replicas: 2
       resources:
         limits:
-          memory: 256M
+          cpus: '1'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # Prometheus (Optional - remove if not needed)
+  # Trading Bot Service
+  trading-bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: trading_bot
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_SECRET=${BINANCE_SECRET}
+    volumes:
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./data:/app/data
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - trading_network
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: trading_postgres
+    environment:
+      - POSTGRES_USER=${DB_USER:-trading_bot}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME:-trading_bot_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_database.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./scripts/optimize_database.sql:/docker-entrypoint-initdb.d/02-optimize.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - trading_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-trading_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: trading_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - trading_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: trading_celery_worker
+    command: celery -A tasks.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./logs:/app/logs
+      - ./models:/app/models
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - trading_network
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+
+  # Celery Beat
+  celery-beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: trading_celery_beat
+    command: celery -A tasks.celery_app beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - trading_network
+    restart: unless-stopped
+
+  # Prometheus
   prometheus:
     image: prom/prometheus:latest
-    container_name: trading-prometheus
-    restart: unless-stopped
-    ports:
-      - "9090:9090"
+    container_name: trading_prometheus
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
+      - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=30d'
+    ports:
+      - "9090:9090"
     networks:
-      - trading-network
-    profiles:
-      - monitoring
-    deploy:
-      resources:
-        limits:
-          memory: 1G
+      - trading_network
+    restart: unless-stopped
 
-  # Grafana (Optional - remove if not needed)
+  # Grafana
   grafana:
     image: grafana/grafana:latest
-    container_name: trading-grafana
-    restart: unless-stopped
+    container_name: trading_grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
       - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_INSTALL_PLUGINS=grafana-clock-panel
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
-    networks:
-      - trading-network
     depends_on:
       - prometheus
-    profiles:
-      - monitoring
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
-  #Harproxy
-    haproxy:
-    image: haproxy:latest
-    container_name: trading-haproxy
-    volumes:
-      - ./docker/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-    ports:
-      - "80:80"
-      - "443:443"
     networks:
-      - trading-network
-    depends_on:
-      - api-server
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-
-volumes:
-  postgres-data:
-    driver: local
-  redis-data:
-    driver: local
-  prometheus-data:
-    driver: local
-  grafana-data:
-    driver: local
+      - trading_network
+    restart: unless-stopped
 
 networks:
-  trading-network:
+  trading_network:
     driver: bridge
     ipam:
       config:
         - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
