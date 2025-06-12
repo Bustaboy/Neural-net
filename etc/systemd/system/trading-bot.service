@@ -1,0 +1,16 @@
+# /etc/systemd/system/trading-bot.service
+[Unit]
+Description=Enhanced Trading Bot
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=simple
+User=tradingbot
+WorkingDirectory=/opt/trading-bot
+Environment="PATH=/opt/trading-bot/venv/bin"
+ExecStart=/opt/trading-bot/venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
