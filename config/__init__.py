@@ -80,3 +80,26 @@ def get_config(key: str, default: Any = None) -> Any:
 
 # Make common functions available at package level
 __all__ = ['load_config', 'get_config', 'CONFIG_DIR', 'CONFIG_FILE']
+
+
+# Configuration Validation
+def validate_config():
+    """Validate configuration on startup."""
+    config = load_config()
+    required_keys = ['app.name', 'server.port', 'database.main.engine']
+    for key in required_keys:
+        if get_config(key) is None:
+            raise ValueError(f"Missing required configuration: {key}")
+
+
+# Environment Variable Override
+def get_config(key: str, default: Any = None) -> Any:
+    """Get configuration with environment variable override."""
+    # Check environment first (MYAPP_DATABASE_HOST for database.host)
+    env_key = f"MYAPP_{key.upper().replace('.', '_')}"
+    env_value = os.getenv(env_key)
+    if env_value is not None:
+        return env_value
+    
+    # Then check YAML config
+    # ... (existing code)
