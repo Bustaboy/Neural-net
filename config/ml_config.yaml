@@ -1,0 +1,24 @@
+# config/ml_config.yaml
+ml_settings:
+  ensemble_voting: soft  # soft or hard voting
+  use_xgboost: true
+  use_lightgbm: true
+  optimization_metric: f1  # or accuracy, precision, recall
+  cv_folds: 5
+  n_optimization_trials: 50
+  
+resource_limits:
+  max_cpu_percent: 80
+  max_memory_percent: 75
+  max_training_time: 3600  # 1 hour
+  
+feature_engineering:
+  technical_indicators:
+    - rsi_14
+    - macd_signal
+    - bollinger_bands
+    - atr_14
+  market_features:
+    - btc_dominance
+    - volatility_index
+    - fear_greed_index
