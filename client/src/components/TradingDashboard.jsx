@@ -8,26 +8,36 @@ const TradingDashboard = () => {
 
   useEffect(() => {
     const interval = setInterval(async () => {
-      const data = await fetchMarketData('BTC/USDT');
-      setMarketData(data);
+      try {
+        const data = await fetchMarketData('BTC/USDT');
+        setMarketData(data);
+      } catch (error) {
+        console.error('Market data fetch error:', error);
+      }
     }, 60000); // Update every minute
     return () => clearInterval(interval);
   }, []);
 
-  const handleTrade = async () => {
-    await placeTrade(trade);
-    alert('Trade placed!');
+  const handleTrade = async (e) => {
+    e.preventDefault();
+    try {
+      await placeTrade(trade);
+      alert('Trade placed successfully!');
+    } catch (error) {
+      alert('Trade failed: ' + error.message);
+    }
   };
 
   return (
-    <div>
+    <div className="trading-dashboard">
       <h1>Trading Dashboard</h1>
-      <div>Price: {marketData.price || 'Loading...'}</div>
+      <div>Current Price: {marketData.price || 'Loading...'}</div>
       <form onSubmit={handleTrade}>
         <input
           type="text"
           value={trade.symbol}
           onChange={(e) => setTrade({ ...trade, symbol: e.target.value })}
+          placeholder="Symbol (e.g., BTC/USDT)"
         />
         <select
           value={trade.side}
@@ -40,8 +50,9 @@ const TradingDashboard = () => {
           type="number"
           value={trade.amount}
           onChange={(e) => setTrade({ ...trade, amount: parseFloat(e.target.value) })}
+          placeholder="Amount"
         />
-        <button type="submit">Trade</button>
+        <button type="submit">Place Trade</button>
       </form>
     </div>
   );
