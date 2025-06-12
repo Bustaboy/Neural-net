@@ -1,0 +1,344 @@
+// client/package.json
+{
+  "name": "trading-platform-client",
+  "version": "2.0.0",
+  "private": true,
+  "dependencies": {
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
+    "@mui/icons-material": "^5.14.19",
+    "@mui/material": "^5.14.20",
+    "@reduxjs/toolkit": "^1.9.7",
+    "axios": "^1.6.2",
+    "chart.js": "^4.4.1",
+    "date-fns": "^2.30.0",
+    "lightweight-charts": "^4.1.0",
+    "react": "^18.2.0",
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "^18.2.0",
+    "react-redux": "^8.1.3",
+    "react-router-dom": "^6.20.1",
+    "recharts": "^2.10.3",
+    "socket.io-client": "^4.7.2",
+    "web-vitals": "^3.5.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.1.5",
+    "@testing-library/react": "^14.1.2",
+    "@testing-library/user-event": "^14.5.1",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.4",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@vitejs/plugin-react": "^4.2.1",
+    "eslint": "^8.55.0",
+    "eslint-config-react-app": "^7.0.1",
+    "prettier": "^3.1.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8"
+  },
+  "scripts": {
+    "start": "vite",
+    "build": "vite build",
+    "test": "vitest",
+    "preview": "vite preview",
+    "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
+    "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,css,md}\""
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
+
+// backend/requirements.txt
+# Core Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.2
+python-multipart==0.0.6
+
+# Database
+sqlalchemy==2.0.23
+alembic==1.13.0
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+pyotp==2.9.0
+qrcode==7.4.2
+cryptography==41.0.7
+
+# Trading & Exchange APIs
+python-binance==1.0.19
+ccxt==4.1.56
+pandas==2.1.4
+numpy==1.26.2
+ta==0.11.0
+
+# Machine Learning
+scikit-learn==1.3.2
+joblib==1.3.2
+optuna==3.5.0
+xgboost==2.0.3
+lightgbm==4.1.0
+
+# Async & Background Tasks
+celery==5.3.4
+redis==5.0.1
+aioredis==2.0.1
+asyncio==3.4.3
+
+# WebSocket
+websockets==12.0
+python-socketio==5.10.0
+
+# Monitoring & Logging
+prometheus-client==0.19.0
+colorlog==6.8.0
+sentry-sdk==1.39.1
+
+# Utilities
+httpx==0.25.2
+aiohttp==3.9.1
+pyyaml==6.0.1
+python-json-logger==2.0.7
+
+# Email
+aiosmtplib==3.0.1
+email-validator==2.1.0
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+httpx==0.25.2
+
+# Development
+black==23.12.0
+flake8==6.1.0
+mypy==1.7.1
+pre-commit==3.6.0
+
+// docker-compose.yml
+version: '3.8'
+
+services:
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: trading_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - api
+    networks:
+      - trading_network
+    restart: unless-stopped
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./client
+      dockerfile: ../infrastructure/docker/Dockerfile.client
+    container_name: trading_frontend
+    environment:
+      - REACT_APP_API_URL=http://api:8000
+      - REACT_APP_WS_URL=ws://api:8000
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    networks:
+      - trading_network
+    restart: unless-stopped
+
+  # FastAPI Backend
+  api:
+    build:
+      context: ./backend
+      dockerfile: ../infrastructure/docker/Dockerfile.backend
+    container_name: trading_api
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/trading_platform
+      - REDIS_URL=redis://redis:6379
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your-encryption-key-here}
+      - BINANCE_TESTNET_URL=https://testnet.binance.vision
+    volumes:
+      - ./backend:/app
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - trading_network
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:14-alpine
+    container_name: trading_postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=trading_platform
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - trading_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache & Session Store
+  redis:
+    image: redis:7-alpine
+    container_name: trading_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - trading_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Prometheus for Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: trading_prometheus
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    networks:
+      - trading_network
+    restart: unless-stopped
+
+  # Grafana for Dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: trading_grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infrastructure/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - trading_network
+    restart: unless-stopped
+
+networks:
+  trading_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+// .env.example
+# Application Settings
+ENVIRONMENT=development
+SECRET_KEY=your-secret-key-here-change-this-in-production
+ENCRYPTION_KEY=your-encryption-key-here-change-this-in-production
+
+# Database
+DATABASE_URL=postgresql://postgres:password@localhost:5432/trading_platform
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# Binance API (Testnet for development)
+BINANCE_TESTNET_URL=https://testnet.binance.vision
+BINANCE_TESTNET_API_KEY=your-testnet-api-key
+BINANCE_TESTNET_SECRET=your-testnet-secret
+
+# Email Configuration
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-specific-password
+EMAIL_FROM=Trading Platform <noreply@trading-platform.com>
+
+# Frontend URLs
+FRONTEND_URL=http://localhost:3000
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:80
+
+# JWT Settings
+JWT_SECRET_KEY=your-jwt-secret-key
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+# Monitoring
+GRAFANA_PASSWORD=secure-grafana-password
+SENTRY_DSN=your-sentry-dsn-if-using-sentry
+
+# Trading Settings
+DEFAULT_POSITION_SIZE_PCT=1.0
+MAX_POSITIONS=5
+DEFAULT_STOP_LOSS_PCT=2.0
+DEFAULT_TAKE_PROFIT_PCT=4.0
+
+# Risk Management
+MAX_DAILY_LOSS_PCT=5.0
+MAX_DRAWDOWN_PCT=15.0
+MAX_CONSECUTIVE_LOSSES=5
+
+# Machine Learning
+ML_MODEL_UPDATE_HOURS=24
+ML_MIN_TRAINING_SAMPLES=1000
+ML_CONFIDENCE_THRESHOLD=0.7
