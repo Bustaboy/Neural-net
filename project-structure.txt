@@ -1,0 +1,141 @@
+enhanced-trading-bot/
+├── README.md
+├── requirements.txt
+├── setup.py
+├── .env.example
+├── .gitignore                 # New: Git ignore file
+├── .env                       # New: Environment variables
+├── config/
+│   ├── __init__.py
+│   ├── config.yaml
+│   └── settings.py
+├── core/
+│   ├── __init__.py
+│   ├── bot.py                # Ignored (under development)
+│   ├── database.py           # New: Database manager
+│   ├── models.py             # Pydantic models
+│   └── exceptions.py         # Custom exceptions
+├── ml/
+│   ├── __init__.py
+│   ├── trainer.py
+│   ├── features.py
+│   ├── ensemble.py
+│   ├── optimizer.py
+│   ├── validator.py
+├── trading/
+│   ├── __init__.py
+│   ├── strategies.py
+│   ├── risk_manager.py
+│   ├── position_manager.py   # New: Position tracking
+│   └── order_executor.py
+├── market/
+│   ├── __init__.py
+│   ├── data_fetcher.py       # New: Market data
+│   ├── indicators.py
+│   ├── sentiment.py
+│   └── dominance.py
+├── api/
+│   ├── __init__.py
+│   ├── app.py                # New: Flask app
+│   ├── auth.py
+│   ├── middleware.py         # New: Rate limiting, subscription checks
+│   ├── websocket.py          # New: WebSocket handlers
+│   ├── routes/
+│   │   ├── __init__.py
+│   │   ├── trading.py        # New: Trading endpoints
+│   │   ├── ml.py             # ML endpoints
+│   │   ├── monitoring.py     # System monitoring
+│   │   ├── backtesting.py
+│   │   ├── alerts.py
+│   │   ├── auth.py           # New: Auth endpoints
+│   │   ├── portfolio.py      # New: Portfolio endpoint
+│   │   ├── subscriptions.py  # New: Subscription endpoint
+│   │   ├── users.py          # New: User management
+│   │   └── market.py         # New: Market data endpoint
+├── web/
+│   ├── package.json          # React app config
+│   ├── public/
+│   │   ├── index.html
+│   │   ├── favicon.ico
+│   │   └── manifest.json
+│   ├── src/
+│   │   ├── index.js
+│   │   ├── App.jsx           # New: Main React component
+│   │   ├── api/
+│   │   │   ├── auth.js       # New: JWT handling
+│   │   │   ├── trading.js    # New: Trading API calls
+│   │   │   ├── portfolio.js  # New: Portfolio API calls
+│   │   │   ├── ml.js         # New: ML status API calls
+│   │   │   └── websocket.js  # New: WebSocket subscriptions
+│   │   ├── components/
+│   │   │   ├── TradingDashboard.jsx  # New: Trading UI
+│   │   │   ├── Portfolio.jsx         # New: Portfolio UI
+│   │   │   ├── MLDashboard.jsx       # New: ML performance UI
+│   │   │   ├── Register.jsx          # New: Registration UI
+│   │   │   ├── Profile.jsx           # New: Profile settings UI
+│   │   │   └── MarketData.jsx        # New: Real-time market UI
+├── tasks/
+│   ├── __init__.py
+│   ├── celery_app.py
+│   ├── training_tasks.py
+│   └── monitoring_tasks.py
+├── utils/
+│   ├── __init__.py
+│   ├── notifications.py
+│   ├── monitoring.py
+│   ├── cache.py
+│   ├── logger.py
+│   ├── circuit_breaker.py
+│   ├── feature_flags.py
+│   ├── health_check.py
+│   ├── metrics.py
+│   ├── query_optimizer.py
+│   └── audit.py             # New: Audit logging
+├── tests/
+│   ├── __init__.py
+│   ├── unit/
+│   │   ├── test_ml_trainer.py
+│   │   ├── test_ensemble.py
+│   │   ├── test_optimizer.py
+│   │   ├── test_database.py
+│   │   └── test_strategies.py
+│   ├── integration/
+│   │   ├── test_api.py
+│   │   ├── test_trading_flow.py
+│   │   └── test_websocket.py
+│   ├── performance/
+│       ├── test_training_speed.py
+│       └── test_resource_usage.py
+├── scripts/
+│   ├── setup_database.py
+│   ├── migrate.py
+│   ├── backtest.py
+│   ├── apply_db_optimizations.py
+│   ├── backup.py
+│   ├── generate_docs.py
+│   ├── init_database.sql
+│   └── optimize_database.sql
+├── docker/
+│   ├── Dockerfile
+│   ├── Dockerfile.api
+│   ├── Dockerfile.client     # New: React frontend build
+│   ├── docker-compose.yml
+│   ├── nginx/
+│   │   ├── nginx.conf
+│   │   ├── frontend.conf     # New: Nginx config for React
+│   │   └── ssl/
+│   │       ├── cert.pem
+│   │       └── key.pem
+│   ├── prometheus/
+│   │   ├── prometheus.yml
+│   ├── grafana/
+│   │   ├── provisioning/
+│   │   │   ├── dashboards/
+│   │   │   ├── datasources/
+│   │   │   └── trading-bot-dashboard.json
+│   ├── haproxy/
+│   │   ├── haproxy.cfg
+└── docs/
+    ├── API.md
+    ├── ML_GUIDE.md
+    ├── DEPLOYMENT.md
