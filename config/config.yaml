@@ -1,12 +1,11 @@
-# Application Configuration File
-# This file contains all configurable settings for the application
+# Binance Trading Bot Configuration File
 
 # Application settings
 app:
-  name: "MyApplication"
+  name: "TradingBot"
   version: "1.0.0"
   debug: false
-  environment: "development"  # Options: development, staging, production
+  environment: "development"
 
 # Server configuration
 server:
@@ -14,40 +13,32 @@ server:
   port: 8000
   workers: 4
   timeout: 30
-  ssl:
-    enabled: false
-    cert_file: ""
-    key_file: ""
 
 # Database configuration
 database:
-  # Main database
   main:
-    engine: "postgresql"  # Options: postgresql, mysql, sqlite
+    engine: "postgresql"
     host: "localhost"
     port: 5432
-    name: "myapp_db"
-    user: "myapp_user"
-    password: "secure_password"  # Use environment variable in production
-    pool_size: 10
-    max_overflow: 20
-    echo: false  # SQL query logging
-  
-  # Redis cache configuration
+    name: "trading_db"
+    user: "trading_user"
+    password: "%{env.TRADING_DB_PASSWORD}"
+    pool_size: 20
+    max_overflow: 40
+    echo: false
   redis:
     host: "localhost"
     port: 6379
     db: 0
-    password: ""
-    max_connections: 50
+    max_connections: 100
 
 # Logging configuration
 logging:
-  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   file:
     enabled: true
-    path: "logs/app.log"
+    path: "logs/bot.log"
     max_size: "10MB"
     backup_count: 5
   console:
@@ -56,51 +47,46 @@ logging:
 
 # Security settings
 security:
-  secret_key: "your-secret-key-here"  # Change in production!
+  secret_key: "%{env.TRADING_SECRET_KEY}"
   algorithm: "HS256"
   access_token_expire_minutes: 30
   refresh_token_expire_days: 7
-  allowed_hosts:
-    - "localhost"
-    - "127.0.0.1"
   cors:
     enabled: true
     origins:
-      - "http://localhost:3000"
-      - "http://localhost:8080"
+      - "https://your-client-app.com"
     allow_credentials: true
-    allow_methods:
-      - "GET"
-      - "POST"
-      - "PUT"
-      - "DELETE"
-    allow_headers:
-      - "*"
+    allow_methods: ["GET", "POST"]
+    allow_headers: ["Authorization", "Content-Type"]
 
 # Email configuration
 email:
-  enabled: false
+  enabled: true
   smtp:
     host: "smtp.gmail.com"
     port: 587
-    user: "your-email@gmail.com"
-    password: "your-app-password"
+    user: "%{env.SMTP_USER}"
+    password: "%{env.SMTP_PASSWORD}"
     use_tls: true
-  from_address: "noreply@myapp.com"
-  from_name: "MyApp"
+  from_address: "noreply@tradingbot.com"
+  from_name: "TradingBot"
+  notifications:
+    registration: true
+    subscription: true
+    trades: false
 
 # Storage configuration
 storage:
-  type: "local"  # Options: local, s3, gcs
-  local:
-    base_path: "uploads/"
-    max_file_size: "10MB"
+  type: "s3"
   s3:
-    bucket: "my-app-bucket"
+    bucket: "trading-bot-ml-data"
     region: "us-east-1"
-    access_key: ""
-    secret_key: ""
-    endpoint_url: ""  # For S3-compatible services
+    access_key: "%{env.S3_ACCESS_KEY}"
+    secret_key: "%{env.S3_SECRET_KEY}"
+    endpoint_url: ""
+  local:
+    base_path: "ml_data/"
+    permissions: "0600"
 
 # API configuration
 api:
@@ -108,55 +94,99 @@ api:
   prefix: "/api"
   rate_limit:
     enabled: true
-    requests_per_minute: 60
-    requests_per_hour: 1000
-  pagination:
-    default_page_size: 20
-    max_page_size: 100
+    requests_per_minute: 30
+    requests_per_hour: 500
 
 # Feature flags
 features:
   registration_enabled: true
-  social_auth_enabled: false
-  two_factor_auth: false
+  two_factor_auth: true
   api_documentation: true
-  maintenance_mode: false
 
 # Third-party services
 services:
   stripe:
-    enabled: false
-    public_key: ""
-    secret_key: ""
-    webhook_secret: ""
-  
-  sentry:
-    enabled: false
-    dsn: ""
-    environment: "development"
-    traces_sample_rate: 0.1
+    enabled: true
+    public_key: "%{env.STRIPE_PUBLIC_KEY}"
+    secret_key: "%{env.STRIPE_SECRET_KEY}"
+    webhook_secret: "%{env.TRADING_BOT_STRIPE_WEBHOOK}"
 
 # Scheduled tasks
 tasks:
-  cleanup:
-    enabled: true
-    schedule: "0 2 * * *"  # Daily at 2 AM
-    retention_days: 30
-  
-  backup:
-    enabled: false
-    schedule: "0 3 * * 0"  # Weekly on Sunday at 3 AM
-    destination: "backups/"
+  - cleanup:
+      enabled: True
+      schedule: "0 0 2 * * *"
+      retention_days: 365
+  - backup:
+      enabled: true
+      schedule: "0 0 3 * * 0"
+      destination: "backups/ml_data"
+      permissions: "0600"
+      time: "0 0 3 * * *"
 
-# Custom application settings
+# Subscription settings
+subscriptions:
+  - tiers:
+    - name: basic
+      price_id: "price_abc123"
+      max_trades_per_day: 5
+      fee_discount: 0.0
+      max_trading_pairs: 3
+      max_api_calls: 100
+      support_level: "Standard"
+      additional_features: []
+    - name: pro
+      price_id: "price_def456"
+      max_trades_per_day: 50
+      fee_discount: 0.1
+      max_trading_pairs: 10
+      max_api_calls: 1000
+      support_level: "Priority"
+      additional_features: ["Advanced Analytics", "Custom Alerts"]
+    - name: premium
+      price_id: "price_ghi789"
+      max_trades_per_day: 500
+      fee_discount: 0.2
+      max_trading_pairs: 50
+      max_api_calls: 10000
+      support_level: "Premium"
+      additional_features: ["Advanced Analytics", "Custom Alerts", "Dedicated Support"]
+
+# WebSocket configuration
+websocket:
+  enabled: true
+  endpoint: "/ws/api/v1/prices"
+  rate_limit: 100  # Messages per minute
+  subscriptions:
+    allowed_channels:
+      - "BTC/USDT"
+      - "ETH/USDT"
+
+# Custom trading settings
 custom:
-  # Add your application-specific settings here
-  welcome_message: "Welcome to MyApplication!"
-  max_upload_size: 5242880  # 5MB in bytes
-  supported_file_types:
-    - ".jpg"
-    - ".jpeg"
-    - ".png"
-    - ".pdf"
-    - ".doc"
-    - ".docx"
+  binance:
+    api_key: "%{env:TRADING_BOT_API_KEY}"
+    secret_key: "%{env:TRADING_BOT_SECRET_KEY}"
+    symbol: "BTC/USDT"
+    interval: "1h"
+    testnet: True
+  trade:
+    quantity: "0.001"
+    threshold: 0.01
+    stop_loss_percent: 0.05
+    max_open_positions: 3
+    risk_management:
+      enabled: True
+      max_risk_per_trade: 0.02
+  model:
+    learning_rate: 0.001
+    layers: [64, 32, 16]
+    type: "LSTM"
+    training_data:
+      source: "binance"
+      retention_days: 90
+      features:
+        - "close"
+        - "volume"
+        - "RSI"
+        - "MACD"
