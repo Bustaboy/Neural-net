@@ -1,0 +1,74 @@
+1. Install Dependencies
+bashpip install -r requirements.txt
+2. Database Setup
+sql-- Add these tables to your existing schema
+CREATE TABLE IF NOT EXISTS training_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reason VARCHAR(100),
+    accuracy FLOAT,
+    precision_score FLOAT,
+    recall_score FLOAT,
+    f1_score FLOAT,
+    feature_importance TEXT,
+    hyperparameters TEXT,
+    training_duration FLOAT,
+    samples_used INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS alert_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    name VARCHAR(100),
+    condition_type VARCHAR(50),
+    operator VARCHAR(10),
+    threshold FLOAT,
+    symbol VARCHAR(20),
+    enabled BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id INTEGER PRIMARY KEY,
+    theme VARCHAR(20) DEFAULT 'dark',
+    notifications_enabled BOOLEAN DEFAULT TRUE,
+    email_alerts BOOLEAN DEFAULT TRUE,
+    trading_mode VARCHAR(20) DEFAULT 'conservative',
+    preferred_symbols TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Add indexes for performance
+CREATE INDEX idx_training_history_timestamp ON training_history(timestamp);
+CREATE INDEX idx_alert_rules_user ON alert_rules(user_id);
+3. Environment Variables
+bash# Add to .env file
+JWT_SECRET_KEY=your-secret-key-here
+REDIS_URL=redis://localhost:6379/0
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+GRAFANA_PASSWORD=secure-password
+4. Start Services
+Option A: Docker Deployment (Recommended)
+bashdocker-compose up -d
+Option B: Manual Deployment
+bash# Terminal 1: Redis
+redis-server
+
+# Terminal 2: Celery Worker
+celery -A tasks.celery_app worker --loglevel=info
+
+# Terminal 3: Celery Beat
+celery -A tasks.celery_app beat --loglevel=info
+
+# Terminal 4: API Server
+python api/app.py
+
+# Terminal 5: Trading Bot
+python main.py
+5. Access the System
+
+Web Dashboard: http://localhost
+API Documentation: http://localhost:5000/docs
+Celery Monitoring: http://localhost:5555
+Grafana Dashboard: http://localhost:3000
