@@ -7,14 +7,18 @@ const MLDashboard = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-      const data = await fetchModelStatus();
-      setStatus(data);
+      try {
+        const data = await fetchModelStatus();
+        setStatus(data);
+      } catch (error) {
+        console.error('ML status fetch error:', error);
+      }
     };
     fetchData();
   }, []);
 
   return (
-    <div>
+    <div className="ml-dashboard">
       <h2>ML Model Performance</h2>
       <p>Model Type: {status.current_model || 'N/A'}</p>
       <p>Accuracy: {status.accuracy || 'N/A'}</p>
