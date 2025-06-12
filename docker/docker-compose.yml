@@ -223,6 +223,24 @@ services:
         limits:
           memory: 512M
 
+  #Harproxy
+    haproxy:
+    image: haproxy:latest
+    container_name: trading-haproxy
+    volumes:
+      - ./docker/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - trading-network
+    depends_on:
+      - api-server
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
 volumes:
   postgres-data:
     driver: local
