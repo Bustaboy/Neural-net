@@ -1,8 +1,15 @@
 # api/routes/trading.py
 from fastapi import APIRouter, Depends
-from trading.order_executor import OrderExecutor
-router = APIRouter(prefix="/trading")
+from flask_jwt_extended import get_jwt_identity
+from core.database import EnhancedDatabaseManager
 
-@router.post("/execute")
-async def execute_trade(trade: TradeRequest, executor: OrderExecutor = Depends()):
-    return executor.execute_trade(trade.symbol, trade.side, trade.amount)
+router = APIRouter(prefix="/trading")
+db_manager = EnhancedDatabaseManager()
+
+@router.get("/history")
+async def get_trade_history(user_id: int = Depends(get_jwt_identity)):
+    trades = db_manager.execute(
+        "SELECT * FROM trades WHERE user_id = ? ORDER BY timestamp DESC LIMIT 50",
+        (user_id,)
+    )
+    return {"trades": trades}
