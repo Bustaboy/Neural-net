@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends
 from flask_jwt_extended import get_jwt_identity
 from core.database import EnhancedDatabaseManager
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/trading")
 db_manager = EnhancedDatabaseManager()
@@ -13,3 +14,13 @@ async def get_trade_history(user_id: int = Depends(get_jwt_identity)):
         (user_id,)
     )
     return {"trades": trades}
+
+class TradeRequest(BaseModel):
+    symbol: str
+    side: str
+    amount: float
+
+@router.post("/execute")
+async def execute_trade(trade: TradeRequest, user_id: int = Depends(subscription_middleware)):
+    # Placeholder: Use trading/order_executor.py
+    return {"status": "trade_placed"}
