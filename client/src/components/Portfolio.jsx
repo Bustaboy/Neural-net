@@ -7,14 +7,18 @@ const Portfolio = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-      const data = await fetchPortfolio();
-      setPortfolio(data);
+      try {
+        const data = await fetchPortfolio();
+        setPortfolio(data.positions);
+      } catch (error) {
+        console.error('Portfolio fetch error:', error);
+      }
     };
     fetchData();
   }, []);
 
   return (
-    <div>
+    <div className="portfolio">
       <h2>My Portfolio</h2>
       <table>
         <thead>
