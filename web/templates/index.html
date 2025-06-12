@@ -1,0 +1,18 @@
+<!-- web/templates/index.html -->
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="container">
+    <h1>Trading Bot Dashboard</h1>
+    <canvas id="priceChart"></canvas>
+    <div id="notifications"></div>
+    <form id="trade-form">
+        <input type="text" name="symbol" placeholder="Symbol (e.g., BTC/USDT)">
+        <select name="side">
+            <option value="buy">Buy</option>
+            <option value="sell">Sell</option>
+        </select>
+        <input type="number" name="amount" placeholder="Amount">
+        <button type="submit">Trade</button>
+    </form>
+</div>
+{% endblock %}
