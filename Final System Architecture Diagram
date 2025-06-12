@@ -1,0 +1,71 @@
+graph TB
+    subgraph "Load Balancer"
+        LB[HAProxy/AWS ALB]
+    end
+    
+    subgraph "API Gateway Layer"
+        AG1[API Gateway 1]
+        AG2[API Gateway 2]
+        AG3[API Gateway 3]
+    end
+    
+    subgraph "Application Layer"
+        WEB1[Web Server 1]
+        WEB2[Web Server 2]
+        API1[API Server 1]
+        API2[API Server 2]
+        BOT1[Trading Bot 1]
+        BOT2[Trading Bot 2]
+    end
+    
+    subgraph "ML Pipeline"
+        ML1[Training Worker 1]
+        ML2[Training Worker 2]
+        ML3[Prediction Server]
+        ML4[Model Registry]
+    end
+    
+    subgraph "Message Queue"
+        REDIS1[(Redis Master)]
+        REDIS2[(Redis Slave)]
+        KAFKA[Kafka Cluster]
+    end
+    
+    subgraph "Data Layer"
+        PG1[(PostgreSQL Master)]
+        PG2[(PostgreSQL Replica)]
+        ES[(Elasticsearch)]
+        S3[S3 Storage]
+    end
+    
+    subgraph "Monitoring"
+        PROM[Prometheus]
+        GRAF[Grafana]
+        ELK[ELK Stack]
+        SENTRY[Sentry]
+    end
+    
+    subgraph "External Services"
+        BINANCE[Binance API]
+        KRAKEN[Kraken API]
+        COINBASE[Coinbase API]
+    end
+    
+    LB --> AG1 & AG2 & AG3
+    AG1 & AG2 & AG3 --> WEB1 & WEB2
+    AG1 & AG2 & AG3 --> API1 & API2
+    API1 & API2 --> BOT1 & BOT2
+    BOT1 & BOT2 --> ML3
+    ML3 --> ML4
+    ML1 & ML2 --> ML4
+    BOT1 & BOT2 --> REDIS1
+    REDIS1 --> REDIS2
+    BOT1 & BOT2 --> KAFKA
+    BOT1 & BOT2 --> PG1
+    PG1 --> PG2
+    BOT1 & BOT2 --> BINANCE & KRAKEN & COINBASE
+    All --> PROM --> GRAF
+    All --> ELK
+    All --> SENTRY
+    ML4 --> S3
+    PG1 --> S3
