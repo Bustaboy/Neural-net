@@ -1,0 +1,108 @@
+// docker/grafana/dashboards/trading-bot-dashboard.json
+{
+  "dashboard": {
+    "id": null,
+    "title": "Trading Bot Monitoring",
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "type": "graph",
+        "title": "Model Performance",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "ml_model_accuracy",
+            "refId": "A",
+            "legendFormat": "Model Accuracy"
+          },
+          {
+            "expr": "rate(ml_predictions_total[5m])",
+            "refId": "B",
+            "legendFormat": "Predictions/sec"
+          }
+        ],
+        "yaxes": [
+          {"format": "percent", "min": 0, "max": 1},
+          {"format": "ops"}
+        ]
+      },
+      {
+        "id": 2,
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "type": "graph",
+        "title": "Trading Performance",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "trading_total_pnl",
+            "refId": "A",
+            "legendFormat": "Total P&L"
+          },
+          {
+            "expr": "trading_active_positions",
+            "refId": "B",
+            "legendFormat": "Active Positions"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "gridPos": {"x": 0, "y": 8, "w": 8, "h": 6},
+        "type": "stat",
+        "title": "Win Rate",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "trading_win_rate",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": 0},
+              {"color": "yellow", "value": 0.4},
+              {"color": "green", "value": 0.6}
+            ]
+          }
+        }
+      },
+      {
+        "id": 4,
+        "gridPos": {"x": 8, "y": 8, "w": 8, "h": 6},
+        "type": "gauge",
+        "title": "System Resources",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes / 1024 / 1024 / 1024",
+            "refId": "A",
+            "legendFormat": "Memory (GB)"
+          }
+        ],
+        "options": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 6},
+              {"color": "red", "value": 8}
+            ]
+          }
+        }
+      },
+      {
+        "id": 5,
+        "gridPos": {"x": 16, "y": 8, "w": 8, "h": 6},
+        "type": "alertlist",
+        "title": "Active Alerts",
+        "datasource": "Prometheus"
+      }
+    ],
+    "refresh": "10s",
+    "time": {"from": "now-6h", "to": "now"}
+  }
+}
