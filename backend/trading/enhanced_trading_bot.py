@@ -19,9 +19,12 @@ class EnhancedTradingBot:
         self.last_activity = datetime.utcnow()
         self.session_trades = 0
         self.session_pnl: Dict[str, float] = {}  # PNL per symbol
-        self.symbols: List[str] = ["BTC", "ETH", "LTC"]  # Diversified initial pairs
+        self.trade_counts: Dict[str, int] = {}  # Trade count per symbol
+        self.symbols: List[str] = ["BTC", "ETH", "LTC", "XRP"]  # Diversified initial pairs
         self.profit_threshold = 0.005  # 0.5% profitability threshold
-        self.min_trades = 5  # Minimum trades to evaluate profitability
+        self.loss_threshold = -0.005  # -0.5% loss threshold for removal
+        self.min_trades = 5  # Minimum trades to evaluate addition
+        self.min_removal_trades = 10  # Minimum trades to evaluate removal
         self.risk_reward_ratio = 2.0  # Minimum 2:1 risk-reward ratio
         self.stablecoin = "USDT"  # Stablecoin for risk elimination
 
@@ -40,10 +43,10 @@ class EnhancedTradingBot:
                     await asyncio.sleep(60)
                     continue
 
-                # Evaluate and add new profitable pairs
+                # Evaluate and manage profitable/unprofitable pairs
                 await self._evaluate_new_pairs(db)
 
-                for symbol in self.symbols:
+                for symbol in self.symbols.copy():  # Copy to allow modification
                     portfolio = db.execute(
                         "SELECT cash FROM portfolio WHERE user_id = :user_id",
                         {"user_id": self.user_id}
@@ -76,6 +79,7 @@ class EnhancedTradingBot:
                     if trade_result["status"] == "success":
                         update_position(self.user_id, symbol, amount, trade_type, db)
                         self.session_trades += 1
+                        self.trade_counts[symbol] = self.trade_counts.get(symbol, 0) + 1
                         # Simulate PNL based on market_data change
                         pnl = amount * 60000.75 * (predicted_change if trade_type == "buy" else -predicted_change)
                         self.session_pnl[symbol] = self.session_pnl.get(symbol, 0.0) + pnl
@@ -101,22 +105,27 @@ class EnhancedTradingBot:
                 await asyncio.sleep(60)
 
     async def _evaluate_new_pairs(self, db: Session):
-        """Evaluate and add new profitable pairs from market_data."""
+        """Evaluate and manage profitable/unprofitable pairs from market_data."""
         market_data = db.execute("SELECT symbol, change FROM market_data GROUP BY symbol").fetchall()
         for symbol_data in market_data:
             symbol, change = symbol_data[0], symbol_data[1]
             if symbol not in self.symbols:
                 if symbol not in self.session_pnl:
                     self.session_pnl[symbol] = 0.0
-                trade_count = sum(1 for _ in db.execute(
-                    "SELECT 1 FROM trades WHERE user_id = :user_id AND symbol = :symbol",
-                    {"user_id": self.user_id, "symbol": symbol}
-                ))
+                    self.trade_counts[symbol] = 0
+                trade_count = self.trade_counts.get(symbol, 0)
                 if trade_count >= self.min_trades:
                     avg_pnl = self.session_pnl[symbol] / trade_count if trade_count > 0 else 0.0
-                    if avg_pnl > self.profit_threshold * 60000.75:  # Threshold in value
+                    if avg_pnl > self.profit_threshold * 60000.75:  # Add if profitable
                         self.symbols.append(symbol)
                         logger.info(f"Added new profitable pair {symbol} for user {self.user_id}, Avg PNL: {avg_pnl}")
+            elif symbol in self.symbols:
+                trade_count = self.trade_counts.get(symbol, 0)
+                if trade_count >= self.min_removal_trades:
+                    avg_pnl = self.session_pnl[symbol] / trade_count if trade_count > 0 else 0.0
+                    if avg_pnl < self.loss_threshold * 60000.75:  # Remove if unprofitable
+                        self.symbols.remove(symbol)
+                        logger.info(f"Removed unprofitable pair {symbol} for user {self.user_id}, Avg PNL: {avg_pnl}")
 
     async def _get_predictions(self, db: Session):
         """Get central model predictions."""
