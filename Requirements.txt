@@ -15,8 +15,9 @@ joblib>=1.3.0
 xgboost>=2.0.0
 lightgbm>=4.1.0
 stable-baselines3>=2.0.0
-pyfl>=1.0.0  # Hypothetical federated learning
-chainlink>=0.1.0  # Hypothetical Chainlink oracle
+flower>=1.0.0  # Real federated learning
+chainlink-python>=0.1.0  # Real Chainlink client
+psutil>=5.9.0  # Device monitoring
 
 # Web Framework & API
 flask>=3.0.0
