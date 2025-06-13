@@ -22,6 +22,7 @@ flask-limiter>=3.5.0  # Rate limiting
 flask-socketio>=5.3.0  # WebSocket support
 PyJWT>=2.8.0  # JWT authentication
 bcrypt>=4.1.0  # Password hashing
+fastapi
 
 # Async & Networking
 aiohttp>=3.9.0
