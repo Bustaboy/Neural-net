@@ -5,107 +5,102 @@ import json
 import websocket
 import threading
 import subprocess
+from datetime import datetime
 
 class NeuralNetApp:
     def __init__(self, root):
-        """Initialize the app with a login window."""
+        """Initialize the app with a cyberpunk login interface."""
         self.root = root
-        self.root.title("Neural-net Trading App")
-        self.root.geometry("800x600")  # Set main window size
-        self.api_url = "http://localhost:8000"  # Backend API address
-        self.ws_url = "ws://localhost:8000/ws"  # WebSocket address
-        self.token = None  # User authentication token
-        self.user_id = None  # User ID for multi-user support
-        self.show_login_window()  # Start with login screen
+        self.root.title("Neural-net: Night City Trader")
+        self.root.geometry("800x600")  # Neon-lit interface size
+        self.api_url = "http://localhost:8000"  # Netrunner hub
+        self.ws_url = "ws://localhost:8000/ws"  # Data stream
+        self.token = None  # Access chip
+        self.user_id = None  # User ID in the grid
+        self.trade_log = []  # Cyberlog of actions
+        self.show_login_window()  # Enter the sprawl
 
     def show_login_window(self):
-        """Display a login window for user authentication or registration."""
+        """Display a cyberpunk login portal."""
         self.login_window = tk.Toplevel(self.root)
-        self.login_window.title("Login to Neural-net")
-        self.login_window.geometry("300x250")  # Fixed size for login window
-        self.login_window.resizable(False, False)  # Prevent resizing
+        self.login_window.title("Enter Night City")
+        self.login_window.geometry("300x250")  # Compact cyberdeck
+        self.login_window.resizable(False, False)
 
-        # Welcome message
-        tk.Label(self.login_window, text="Welcome! Log in or register", font=("Arial", 12)).pack(pady=10)
-        
-        # Username input
-        tk.Label(self.login_window, text="Username:").pack(pady=5)
+        tk.Label(self.login_window, text="Welcome, Choombas! Log in or jack into a new profile", font=("Courier New", 12, "bold")).pack(pady=10)
+        tk.Label(self.login_window, text="Handle:").pack(pady=5)
         self.username_entry = tk.Entry(self.login_window, width=20)
         self.username_entry.pack()
-        
-        # Password input
-        tk.Label(self.login_window, text="Password:").pack(pady=5)
-        self.password_entry = tk.Entry(self.login_window, show="*", width=20)  # Hide password
+        tk.Label(self.login_window, text="Passcode:").pack(pady=5)
+        self.password_entry = tk.Entry(self.login_window, show="*", width=20)
         self.password_entry.pack()
-        
-        # Login and Register buttons
-        tk.Button(self.login_window, text="Login", command=self.login, width=10).pack(pady=10)
-        tk.Button(self.login_window, text="Register", command=self.register, width=10).pack(pady=5)
+        tk.Button(self.login_window, text="Jack In", command=self.login, width=10).pack(pady=10)
+        tk.Button(self.login_window, text="New Profile", command=self.register, width=10).pack(pady=5)
 
     def login(self):
-        """Log in by calling the backend's /auth/login API."""
-        username = self.username_entry.get().strip()
-        password = self.password_entry.get().strip()
-        if not username or not password:
-            messagebox.showerror("Error", "Please enter both username and password.", parent=self.login_window)
+        """Log into the net with credentials."""
+        handle = self.username_entry.get().strip()
+        passcode = self.password_entry.get().strip()
+        if not handle or not passcode:
+            messagebox.showerror("Error", "Enter your handle and passcode, choom!", parent=self.login_window)
             return
         try:
             response = requests.post(
                 f"{self.api_url}/auth/login",
-                json={"username": username, "password": password},
-                timeout=5  # Wait up to 5 seconds
+                json={"username": handle, "password": passcode},
+                timeout=5
             )
             if response.status_code == 200:
                 data = response.json()
                 self.token = data["access_token"]
                 self.user_id = data.get("user_id")
                 if not self.user_id:
-                    messagebox.showerror("Error", "Login failed: No user ID returned.", parent=self.login_window)
+                    messagebox.showerror("Error", "Login failed: No grid access granted.", parent=self.login_window)
                     return
-                self.login_window.destroy()  # Close login window
-                self.setup_main_gui()  # Open main GUI
+                self.login_window.destroy()
+                self.setup_main_gui()
             else:
-                messagebox.showerror("Error", "Invalid username or password. Try again.", parent=self.login_window)
+                messagebox.showerror("Error", "Invalid handle or passcode. Try again, nova!", parent=self.login_window)
         except requests.RequestException:
             messagebox.showerror(
                 "Error",
-                "Cannot connect to the app. Make sure the app is running (start_app.py).",
+                "Net connection lost. Ensure the server is online (start_app.py).",
                 parent=self.login_window
             )
 
     def register(self):
-        """Register a new user by calling /auth/register."""
-        username = self.username_entry.get().strip()
-        password = self.password_entry.get().strip()
-        if not username or not password:
-            messagebox.showerror("Error", "Please enter both username and password.", parent=self.login_window)
+        """Register a new profile in the system."""
+        handle = self.username_entry.get().strip()
+        passcode = self.password_entry.get().strip()
+        if not handle or not passcode:
+            messagebox.showerror("Error", "Enter your handle and passcode, choom!", parent=self.login_window)
             return
         try:
             response = requests.post(
                 f"{self.api_url}/auth/register",
-                json={"username": username, "password": password},
+                json={"username": handle, "password": passcode},
                 timeout=5
             )
             if response.status_code == 201:
                 messagebox.showinfo(
                     "Success",
-                    "Account created! Log in with your new username and password.",
+                    "New profile jacked in! Log in with your handle and passcode.",
                     parent=self.login_window
                 )
             else:
-                error = response.json().get("detail", "Registration failed.")
-                messagebox.showerror("Error", f"Failed to register: {error}", parent=self.login_window)
+                error = response.json().get("detail", "Registration glitch.")
+                messagebox.showerror("Error", f"Failed to jack in: {error}", parent=self.login_window)
         except requests.RequestException:
             messagebox.showerror(
                 "Error",
-                "Cannot connect to the app. Make sure it’s running.",
+                "Net connection lost. Ensure the server is online.",
                 parent=self.login_window
             )
 
     def setup_main_gui(self):
-        """Create the main GUI with tabs for Trading, Portfolio, Market Data, and Settings."""
+        """Create the cyberpunk main interface with tabs."""
         self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(pady=10, fill="both", expand=True)  # Fill window
+        self.notebook.pack(pady=10, fill="both", expand=True)
 
         # Create frames for each tab
         self.trading_frame = ttk.Frame(self.notebook)
@@ -114,94 +109,88 @@ class NeuralNetApp:
         self.settings_frame = ttk.Frame(self.notebook)
 
         # Add tabs to notebook
-        self.notebook.add(self.trading_frame, text="Trading")
-        self.notebook.add(self.portfolio_frame, text="Portfolio")
-        self.notebook.add(self.market_frame, text="Market Data")
-        self.notebook.add(self.settings_frame, text="Settings")
+        self.notebook.add(self.trading_frame, text="Trade Hub")
+        self.notebook.add(self.portfolio_frame, text="Asset Vault")
+        self.notebook.add(self.market_frame, text="Data Net")
+        self.notebook.add(self.settings_frame, text="Cyberdeck Config")
 
-        # Initialize each tab
+        # Set up each tab
         self.setup_trading_tab()
         self.setup_portfolio_tab()
         self.setup_market_tab()
         self.setup_settings_tab()
 
-        # Start WebSocket for live market updates
+        # Start WebSocket for live data streams
         self.start_websocket()
 
     def setup_trading_tab(self):
-        """Set up the Trading tab for buying/selling assets and training models."""
-        tk.Label(self.trading_frame, text="Trading Dashboard", font=("Arial", 14)).pack(pady=10)
+        """Set up the Trade Hub for netrunning trades and model upgrades."""
+        tk.Label(self.trading_frame, text="Trade Hub: Netrun the Markets", font=("Courier New", 14, "bold")).pack(pady=10)
         
-        # Symbol input
-        tk.Label(self.trading_frame, text="Asset (e.g., BTC for Bitcoin):").pack()
+        # Trading log display
+        self.trade_log_text = tk.Text(self.trading_frame, height=10, width=70)
+        self.trade_log_text.pack(pady=5)
+        self.update_trade_log()  # Initial netrun log
+
+        # Manual trading inputs
+        tk.Label(self.trading_frame, text="Target Asset (e.g., BTC/USDT):").pack()
         self.symbol_entry = tk.Entry(self.trading_frame, width=20)
         self.symbol_entry.pack(pady=5)
-        self.symbol_entry.insert(0, "BTC")
-        
-        # Amount input
-        tk.Label(self.trading_frame, text="Amount (e.g., 0.01 for 0.01 BTC):").pack()
+        self.symbol_entry.insert(0, "BTC/USDT")
+        tk.Label(self.trading_frame, text="Trade Amount (e.g., 0.01):").pack()
         self.amount_entry = tk.Entry(self.trading_frame, width=20)
         self.amount_entry.pack(pady=5)
         self.amount_entry.insert(0, "0.01")
-        
-        # Buy/Sell buttons
-        tk.Button(self.trading_frame, text="Buy", command=lambda: self.make_trade("buy"), width=10).pack(pady=5)
-        tk.Button(self.trading_frame, text="Sell", command=lambda: self.make_trade("sell"), width=10).pack(pady=5)
+        tk.Button(self.trading_frame, text="Netrun Buy", command=lambda: self.make_trade("buy"), width=10).pack(pady=5)
+        tk.Button(self.trading_frame, text="Netrun Sell", command=lambda: self.make_trade("sell"), width=10).pack(pady=5)
         
         # Train Model button
         tk.Button(
             self.trading_frame,
-            text="Train Trading Model",
+            text="Install Chrome Upgrade",
             command=self.train_model,
             width=15
         ).pack(pady=10)
         
         # Status message
-        self.trade_status = tk.Label(self.trading_frame, text="Ready to trade", fg="blue")
+        self.trade_status = tk.Label(self.trading_frame, text="Ready to Netrun", fg="cyan")
         self.trade_status.pack(pady=10)
 
     def setup_portfolio_tab(self):
-        """Set up the Portfolio tab to show cash and assets."""
-        tk.Label(self.portfolio_frame, text="Your Portfolio", font=("Arial", 14)).pack(pady=10)
+        """Set up the Asset Vault to show eddies and holdings."""
+        tk.Label(self.portfolio_frame, text="Asset Vault: Your Loot", font=("Courier New", 14, "bold")).pack(pady=10)
         self.portfolio_text = tk.Text(self.portfolio_frame, height=10, width=50)
         self.portfolio_text.pack(pady=5)
-        tk.Button(self.portfolio_frame, text="Refresh", command=self.update_portfolio, width=10).pack(pady=5)
-        self.update_portfolio()  # Load portfolio initially
+        tk.Button(self.portfolio_frame, text="Scan Vault", command=self.update_portfolio, width=10).pack(pady=5)
+        self.update_portfolio()  # Scan loot initially
 
     def setup_market_tab(self):
-        """Set up the Market Data tab for live updates."""
-        tk.Label(self.market_frame, text="Live Market Data", font=("Arial", 14)).pack(pady=10)
+        """Set up the Data Net for live market feeds."""
+        tk.Label(self.market_frame, text="Data Net: Live Feeds", font=("Courier New", 14, "bold")).pack(pady=10)
         self.market_text = tk.Text(self.market_frame, height=10, width=50)
         self.market_text.pack(pady=5)
-        self.market_text.insert(tk.END, "Waiting for market updates...\n")
+        self.market_text.insert(tk.END, "Awaiting Data Stream...\n")
 
     def setup_settings_tab(self):
-        """Set up the Settings tab for entering API keys."""
-        tk.Label(self.settings_frame, text="Your API Keys", font=("Arial", 14)).pack(pady=10)
-        
-        # Alpha Vantage API key
-        tk.Label(self.settings_frame, text="Alpha Vantage API Key (for market data):").pack()
+        """Set up the Cyberdeck Config for API and environment settings."""
+        tk.Label(self.settings_frame, text="Cyberdeck Config: Access Codes", font=("Courier New", 14, "bold")).pack(pady=10)
+        tk.Label(self.settings_frame, text="Alpha Vantage Access Code (Market Data):").pack()
         self.market_api_entry = tk.Entry(self.settings_frame, width=40)
         self.market_api_entry.pack(pady=5)
-        
-        # Exchange API key
-        tk.Label(self.settings_frame, text="Exchange API Key (Binance or Coinbase):").pack()
+        tk.Label(self.settings_frame, text="Binance Access Key:").pack()
         self.exchange_api_entry = tk.Entry(self.settings_frame, width=40)
         self.exchange_api_entry.pack(pady=5)
-        
-        # Exchange secret
-        tk.Label(self.settings_frame, text="Exchange Secret (Binance or Coinbase):").pack()
+        tk.Label(self.settings_frame, text="Binance Secret Key:").pack()
         self.exchange_secret_entry = tk.Entry(self.settings_frame, width=40)
         self.exchange_secret_entry.pack(pady=5)
-        
-        # Save button
-        tk.Button(self.settings_frame, text="Save Keys", command=self.save_settings, width=15).pack(pady=10)
-        
-        # Load existing keys
+        # Testnet/Live toggle
+        self.testnet_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(self.settings_frame, text="Testnet Mode (Safe Zone)", variable=self.testnet_var).pack(pady=5)
+        tk.Button(self.settings_frame, text="Upload Codes", command=self.save_settings, width=15).pack(pady=10)
         self.load_settings()
 
     def load_settings(self):
-        """Load user-specific API keys from the backend."""
+        """Load user-specific API keys and testnet setting from backend."""
         if not self.token:
             return
         headers = {"Authorization": f"Bearer {self.token}"}
@@ -215,115 +204,127 @@ class NeuralNetApp:
                 self.exchange_api_entry.insert(0, keys.get("exchange_api_key", ""))
                 self.exchange_secret_entry.delete(0, tk.END)
                 self.exchange_secret_entry.insert(0, keys.get("exchange_secret", ""))
+                # Load testnet setting (placeholder; update schema if needed)
+                # self.testnet_var.set(db.execute("SELECT testnet FROM users WHERE id = :user_id", {"user_id": self.user_id}).fetchone()[0])
             else:
-                messagebox.showwarning("Warning", "Could not load API keys. Enter and save new keys.")
+                messagebox.showwarning("Warning", "Failed to decrypt access codes. Enter and upload new ones.")
         except requests.RequestException:
-            messagebox.showerror("Error", "Cannot connect to the app. Make sure it’s running.")
+            messagebox.showerror("Error", "Net connection lost. Ensure server is online.")
 
     def save_settings(self):
-        """Save API keys to the backend."""
+        """Save API keys and testnet setting to backend."""
         headers = {"Authorization": f"Bearer {self.token}"}
         payload = {
             "market_api_key": self.market_api_entry.get().strip(),
             "exchange_api_key": self.exchange_api_entry.get().strip(),
-            "exchange_secret": self.exchange_secret_entry.get().strip()
+            "exchange_secret": self.exchange_secret_entry.get().strip(),
+            "testnet": self.testnet_var.get()  # Save testnet setting
         }
         if not any(payload.values()):
-            messagebox.showerror("Error", "Please enter at least one API key.")
+            messagebox.showerror("Error", "Enter at least one access code, choom!")
             return
         try:
             response = requests.post(f"{self.api_url}/users/api-keys", json=payload, headers=headers, timeout=5)
             if response.status_code == 200:
-                messagebox.showinfo("Success", "API keys saved successfully!")
+                messagebox.showinfo("Success", "Access codes uploaded to the grid!")
             else:
-                error = response.json().get("detail", "Failed to save keys.")
-                messagebox.showerror("Error", f"Failed to save keys: {error}")
+                error = response.json().get("detail", "Upload failed.")
+                messagebox.showerror("Error", f"Failed to upload codes: {error}")
         except requests.RequestException:
-            messagebox.showerror("Error", "Cannot connect to the app. Make sure it’s running.")
+            messagebox.showerror("Error", "Net connection lost. Ensure server is online.")
 
     def make_trade(self, trade_type):
-        """Send a buy or sell trade request to the backend."""
-        symbol = self.symbol_entry.get().strip().upper()
+        """Send a netrun trade request (buy/sell) to the backend."""
+        target = self.symbol_entry.get().strip().upper()
         amount = self.amount_entry.get().strip()
-        if not symbol or not amount:
-            self.trade_status.config(text="Error: Enter both asset and amount.", fg="red")
+        if not target or not amount:
+            self.trade_status.config(text="Error: Target and amount required, nova!", fg="red")
             return
         try:
             amount = float(amount)
             if amount <= 0:
-                raise ValueError("Amount must be positive.")
+                raise ValueError("Amount must be positive, choom!")
         except ValueError:
             self.trade_status.config(text="Error: Amount must be a number (e.g., 0.01).", fg="red")
             return
         headers = {"Authorization": f"Bearer {self.token}"}
-        payload = {"symbol": symbol, "amount": amount, "type": trade_type}
+        payload = {"symbol": target, "amount": amount, "type": trade_type}
         try:
             response = requests.post(f"{self.api_url}/trading/trade", json=payload, headers=headers, timeout=5)
             if response.status_code == 200:
                 trade_id = response.json().get("trade_id", "Unknown")
-                self.trade_status.config(text=f"{trade_type.capitalize()} successful: Trade ID {trade_id}", fg="green")
+                self.trade_status.config(text=f"Netrun {trade_type.capitalize()} Complete: ID {trade_id}", fg="green")
+                self.update_trade_log(f"{datetime.now()}: Netrun {trade_type.capitalize()} {amount} {target} - ID {trade_id}")
             else:
-                error = response.json().get("detail", "Trade failed.")
+                error = response.json().get("detail", "Trade glitch.")
                 self.trade_status.config(text=f"Error: {error}", fg="red")
         except requests.RequestException:
-            self.trade_status.config(text="Error: Cannot connect to the app.", fg="red")
+            self.trade_status.config(text="Error: Net connection lost.", fg="red")
+
+    def train_model(self):
+        """Install a chrome upgrade (train the model)."""
+        try:
+            self.trade_status.config(text="Upgrading Chrome, hold tight...", fg="cyan")
+            self.root.update()
+            result = subprocess.run(
+                ["python", "modeltrainer/EnhancedModelTrainer.py", "--user-id", str(self.user_id), "--config", "config/ml_config.yaml"],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            self.trade_status.config(text="Chrome Upgrade Installed!", fg="green")
+            self.update_trade_log(f"{datetime.now()}: Chrome Upgrade Installed")
+        except subprocess.CalledProcessError as e:
+            error = e.stderr or "Unknown glitch."
+            self.trade_status.config(text=f"Error: Upgrade failed - {error}", fg="red")
+        except FileNotFoundError:
+            self.trade_status.config(text="Error: Upgrade script not found.", fg="red")
 
     def update_portfolio(self):
-        """Fetch and display portfolio data from the backend."""
+        """Scan the asset vault for eddies and holdings."""
         headers = {"Authorization": f"Bearer {self.token}"}
         try:
             response = requests.get(f"{self.api_url}/portfolio", headers=headers, timeout=5)
             if response.status_code == 200:
                 portfolio = response.json()
                 self.portfolio_text.delete(1.0, tk.END)
-                self.portfolio_text.insert(tk.END, f"Cash: ${portfolio.get('cash', 0):.2f}\n\n")
+                self.portfolio_text.insert(tk.END, f"Eddies: ${portfolio.get('cash', 0):.2f}\n\n")
                 assets = portfolio.get('assets', [])
                 if not assets:
-                    self.portfolio_text.insert(tk.END, "No assets owned.\n")
+                    self.portfolio_text.insert(tk.END, "Vault Empty...\n")
                 for asset in assets:
                     self.portfolio_text.insert(tk.END, f"{asset.get('name', 'Unknown')}: ${asset.get('value', 0):.2f}\n")
             else:
                 self.portfolio_text.delete(1.0, tk.END)
-                self.portfolio_text.insert(tk.END, "Error: Could not load portfolio.\n")
+                self.portfolio_text.insert(tk.END, "Error: Vault scan failed.\n")
         except requests.RequestException:
             self.portfolio_text.delete(1.0, tk.END)
-            self.portfolio_text.insert(tk.END, "Error: Cannot connect to the app.\n")
+            self.portfolio_text.insert(tk.END, "Error: Net connection lost.\n")
 
-    def train_model(self):
-        """Run the model training script."""
-        try:
-            self.trade_status.config(text="Training model, please wait...", fg="blue")
-            self.root.update()  # Refresh GUI
-            result = subprocess.run(
-                ["python", "modeltrainer/EnhancedModelTrainer", "--config", "config/ml_config.yaml"],
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            self.trade_status.config(text="Model trained successfully! Check models/ folder.", fg="green")
-        except subprocess.CalledProcessError as e:
-            error = e.stderr or "Unknown error."
-            self.trade_status.config(text=f"Error: Training failed. {error}", fg="red")
-        except FileNotFoundError:
-            self.trade_status.config(text="Error: Training script not found. Check modeltrainer/ folder.", fg="red")
+    def update_trade_log(self, message):
+        """Update the cyberlog with new netrun actions."""
+        self.trade_log.append(message)
+        self.trade_log_text.delete(1.0, tk.END)
+        for log_entry in self.trade_log[-10:]:  # Show last 10 netrun entries
+            self.trade_log_text.insert(tk.END, f"{log_entry}\n")
 
     def on_websocket_message(self, ws, message):
-        """Handle live market data updates from WebSocket."""
+        """Handle live data streams from the net."""
         try:
             data = json.loads(message)
             if data.get("type") == "market_update":
                 self.market_text.delete(1.0, tk.END)
                 self.market_text.insert(
                     tk.END,
-                    f"{data['data'].get('symbol', 'Unknown')}: ${data['data'].get('price', 0):.2f} "
-                    f"({data['data'].get('change', 0):+.2f}%)\n"
+                    f"Data Net Feed: {data['data'].get('symbol', 'Unknown')} - Eddies: ${data['data'].get('price', 0):.2f} "
+                    f"({data['data'].get('change', 0):+.2f}%) - RSI: {data['data'].get('rsi', 0.0)}\n"
                 )
         except json.JSONDecodeError:
             self.market_text.delete(1.0, tk.END)
-            self.market_text.insert(tk.END, "Error: Invalid market data received.\n")
+            self.market_text.insert(tk.END, "Error: Corrupted Data Stream...\n")
 
     def start_websocket(self):
-        """Start WebSocket connection in a separate thread."""
+        """Start the data stream in a separate thread."""
         def run_websocket():
             ws = websocket.WebSocketApp(self.ws_url, on_message=self.on_websocket_message)
             ws.run_forever()
