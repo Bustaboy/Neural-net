@@ -1,46 +1,38 @@
-# scripts/init_database.sql
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    email TEXT UNIQUE,
-    password TEXT,
-    subscription_tier TEXT,
-    two_factor_secret TEXT,
-    verified BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- Create users table for authentication and API keys
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    market_api_key TEXT,
+    exchange_api_key TEXT,
+    exchange_secret TEXT
 );
 
-CREATE TABLE trades (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER,
-    symbol TEXT,
-    side TEXT,
-    amount FLOAT,
-    price FLOAT,
-    profit_loss FLOAT,
-    timestamp TIMESTAMP
+-- Create portfolio table for user cash balances
+CREATE TABLE IF NOT EXISTS portfolio (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    cash REAL DEFAULT 0.0,
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
-CREATE TABLE positions (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER,
-    symbol TEXT,
-    amount FLOAT,
-    value FLOAT,
-    status TEXT DEFAULT 'open',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- Create assets table for user-owned assets
+CREATE TABLE IF NOT EXISTS assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    portfolio_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    value REAL DEFAULT 0.0,
+    FOREIGN KEY (portfolio_id) REFERENCES portfolio(id)
 );
 
-CREATE TABLE user_preferences (
-    user_id INTEGER PRIMARY KEY,
-    theme VARCHAR(20) DEFAULT 'dark',
-    notifications_enabled BOOLEAN DEFAULT TRUE,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE audit_logs (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER,
-    action TEXT,
-    details JSON,
-    timestamp TIMESTAMP
+-- Create trades table for trade history
+CREATE TABLE IF NOT EXISTS trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    amount REAL NOT NULL,
+    type TEXT NOT NULL,
+    trade_id TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
