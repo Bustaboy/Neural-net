@@ -4,18 +4,27 @@ from typing import Dict, Any
 import asyncio
 import logging
 import json
+from web3 import Web3
 
 logger = logging.getLogger(__name__)
 
 class NotificationManager:
     def __init__(self):
-        self.bot = telegram.Bot(token="YOUR_TELEGRAM_BOT_TOKEN")  # Replace with actual token
+        self.bot = telegram.Bot(token="YOUR_TELEGRAM_BOT_TOKEN")
         self.sharded_channels = {
-            0: "@NeuralNetTrading0",  # Replace with actual chat IDs
+            0: "@NeuralNetTrading0",
             1: "@NeuralNetTrading1"
         }
         self.db_manager = EnhancedDatabaseManager()
-        self.mock_contract = {"tokens": {}, "nfts": {}, "proposals": {}}
+        self.w3 = Web3(Web3.HTTPProvider("YOUR_ETHEREUM_NODE"))
+        self.token_contract = self.w3.eth.contract(
+            address="0xYOUR_TOKEN_ADDRESS",  # Replace with actual address
+            abi=[{"function": "transfer", "inputs": [{"type": "address"}, {"type": "uint256"}]}]
+        )
+        self.nft_contract = self.w3.eth.contract(
+            address="0xYOUR_NFT_ADDRESS",
+            abi=[{"function": "mint", "inputs": [{"type": "uint256"}, {"type": "string"}]}]
+        )
 
     async def send_notification(self, user_id: int, message: str):
         try:
@@ -38,13 +47,16 @@ class NotificationManager:
 
     async def award_tokens(self, user_id: int, amount: int):
         try:
+            user_address = self.db_manager.fetch_one(
+                "SELECT eth_address FROM users WHERE id = ?", (user_id,)
+            )["eth_address"]
             self.db_manager.execute(
                 "UPDATE users SET token_balance = token_balance + ? WHERE id = ?",
                 (amount, user_id)
             )
-            self.mock_contract["tokens"][user_id] = self.mock_contract["tokens"].get(user_id, 0) + amount
-            if sum(self.mock_contract["tokens"].values()) > 1000000:  # Vesting cap
-                amount = max(0, amount - (sum(self.mock_contract["tokens"].values()) - 1000000))
+            tx = self.token_contract.functions.transfer(user_address, amount).buildTransaction()
+            # Mock transaction
+            logger.info(f"Mock token transfer: {amount} to {user_address}")
             await self.bot.send_message(
                 chat_id=user_id,
                 text=f"Awarded {amount} NEURAL tokens for your contribution!"
@@ -55,11 +67,15 @@ class NotificationManager:
 
     async def mint_strategy_nft(self, user_id: int):
         try:
-            nft_id = len(self.mock_contract["nfts"])
-            self.mock_contract["nfts"][nft_id] = {"owner": user_id, "strategy": "MockStrategy"}
+            user_address = self.db_manager.fetch_one(
+                "SELECT eth_address FROM users WHERE id = ?", (user_id,)
+            )["eth_address"]
+            tx = self.nft_contract.functions.mint(user_id, "StrategyNFT").buildTransaction()
+            # Mock transaction
+            logger.info(f"Mock NFT mint for user {user_id}")
             await self.bot.send_message(
                 chat_id=user_id,
-                text=f"Minted Strategy NFT #{nft_id} for your trading success!"
+                text="Minted Strategy NFT for your trading success!"
             )
             logger.info(f"Minted Strategy NFT for user {user_id}")
         except Exception as e:
@@ -67,9 +83,11 @@ class NotificationManager:
 
     async def vote_on_proposal(self, user_id: int, proposal_id: int, vote: bool):
         try:
-            if proposal_id not in self.mock_contract["proposals"]:
-                self.mock_contract["proposals"][proposal_id] = {"yes": 0, "no": 0}
-            self.mock_contract["proposals"][proposal_id]["yes" if vote else "no"] += self.mock_contract["tokens"].get(user_id, 0)
+            user_address = self.db_manager.fetch_one(
+                "SELECT eth_address FROM users WHERE id = ?", (user_id,)
+            )["eth_address"]
+            # Mock governance
+            logger.info(f"Mock vote: User {user_id} voted {'for' if vote else 'against'} proposal {proposal_id}")
             await self.bot.send_message(
                 chat_id=user_id,
                 text=f"Voted {'for' if vote else 'against'} proposal {proposal_id}"
