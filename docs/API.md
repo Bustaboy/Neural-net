@@ -27,7 +27,7 @@ The world's most powerful retail crypto trading bot, revolutionizing trading wit
 
 ## AI Features
 - **Federated AI**: Server-side training with client data aggregation.
-- **Real-Time Training**: Incremental server updates every 10 minutes.
+- **Real-Time Training**: Asynchronous server updates every 10 minutes.
 - **Self-Optimizing**: AI-tuned hyperparameters.
 - **On-Chain Validation**: Chainlink oracles ensure data integrity.
 - **Bear Market AI**: Dedicated agent trained on 2018/2022 bear markets.
@@ -36,11 +36,11 @@ The world's most powerful retail crypto trading bot, revolutionizing trading wit
 - **Telegram**: Sharded channels (@NeuralNetTrading0, @NeuralNetTrading1) for scalability.
 - **NEURAL Tokens**: Earn for contributions, 1M total cap with vesting.
 - **Strategy NFTs**: Mint NFTs for top strategies, tradeable on marketplace.
-- **Governance**: Real on-chain voting for bot upgrades.
+- **Governance**: On-chain voting with batch transactions.
 
 ## Strategies
 - **Micro-Trend Scalping**: Capture 5-minute price spikes.
-- **DeFi Yield Farming**: Stake in 60%+ APY pools (simulated).
+- **DeFi Yield Farming**: Stake in 60%+ APY pools (real-time feeds).
 - **Cross-Chain Arbitrage**: Exploit Ethereum/Solana/Polygon/Avalanche spreads.
 - **Social Sentiment Arbitrage**: Leverage X-driven pumps.
 - **Portfolio Rebalancing**: AI-driven asset allocation.
@@ -50,3 +50,12 @@ The world's most powerful retail crypto trading bot, revolutionizing trading wit
 - **Voice Trading**: Robust commands for BTC, ETH, MATIC, AVAX.
 - **AR Visualization**: 3D portfolio view with CPU fallback.
 - **Compliance**: Real-time KYC/AML with user verification.
+
+## Server Requirements (100,000 Users)
+- **Compute**: 16 CPU cores (e.g., AMD EPYC 7302), optional NVIDIA A10 GPU.
+- **Memory**: 32GB DDR4.
+- **Storage**: 1.5TB NVMe SSD.
+- **Network**: 10Gbps, ~3GB/s peak bandwidth.
+- **Cloud**: AWS EC2 m5.4xlarge (16 vCPUs, 64GB RAM) + EBS gp3 (1.5TB) + 10Gbps.
+- **Cost**: ~$1000/month (compute: $0.768/hour × 720 hours = $552, storage: $150, bandwidth: $300).
+- **Scaling**: Kubernetes auto-scaling (3–10 API replicas, 2–5 training replicas).
