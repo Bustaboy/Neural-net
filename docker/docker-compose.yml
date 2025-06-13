@@ -14,15 +14,15 @@ services:
       - db
       - redis
     deploy:
-      replicas: 3
+      replicas: 2
       resources:
         limits:
-          cpus: '2.0'
-          memory: 4G
+          cpus: '1.0'
+          memory: 2G
       autoscaling:
-        min_replicas: 3
-        max_replicas: 10
-        target_cpu_utilization: 70
+        min_replicas: 2
+        max_replicas: 5
+        target_cpu_utilization: 60
 
   training:
     build:
@@ -31,15 +31,15 @@ services:
     environment:
       - MODEL_PATH=models/central_model.pkl
     deploy:
-      replicas: 2
+      replicas: 1
       resources:
         limits:
-          cpus: '8.0'
-          memory: 16G
+          cpus: '4.0'
+          memory: 8G
       autoscaling:
-        min_replicas: 2
-        max_replicas: 5
-        target_cpu_utilization: 80
+        min_replicas: 1
+        max_replicas: 3
+        target_cpu_utilization: 60
 
   db:
     image: postgres:14
@@ -49,11 +49,13 @@ services:
       - POSTGRES_DB=neuralnet
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=secret
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "work_mem=16MB"]  # Optimize memory
 
   redis:
     image: redis:6
     volumes:
       - redis_data:/data
+    command: ["redis-server", "--maxmemory", "1gb"]  # Limit memory
 
   haproxy:
     image: haproxy:2.4
@@ -76,6 +78,16 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards
     ports:
       - "3000:3000"
+
+  lambda-compliance:
+    image: amazon/aws-lambda-python:3.9
+    environment:
+      - COMPLIANCE_API_KEY=YOUR_COMPLIANCE_API_KEY
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 128M
 
 volumes:
   db_data:
