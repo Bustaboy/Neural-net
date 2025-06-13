@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 import uuid
+import logging
 
 from ..auth.jwt_handler import get_current_user
 from ..auth.permissions import PermissionChecker, Permission
@@ -11,11 +12,18 @@ from ...database.models.user import User, Trade, Position, BotInstance
 from ...trading.user_bot_manager import UserBotManager
 from ...trading.strategy_executor import StrategyExecutor
 from ...core.cache_manager import CacheManager
+from ...trading.enhanced_trading_bot import EnhancedTradingBot
+from ...trading.position_manager import PositionManager
+from core.database import EnhancedDatabaseManager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 permission_checker = PermissionChecker()
+db_manager = EnhancedDatabaseManager()
 bot_manager = UserBotManager()
 cache_manager = CacheManager()
+position_manager = PositionManager(db_manager)
 
 # Request/Response models
 class BotConfigRequest(BaseModel):
@@ -85,26 +93,31 @@ async def start_bot(
                 detail="Portfolio not found or access denied"
             )
         
+        # Enable testnet and compounding by default
+        config.config["testnet"] = config.config.get("testnet", True)
+        config.config["compound_profits"] = True
+        
         # Create bot instance
-        bot_instance = await bot_manager.create_bot_instance(
+        bot_instance = BotInstance(
+            id=str(uuid.uuid4()),
             user_id=current_user.id,
-            portfolio_id=config.portfolio_id,
             name=config.name,
             strategy=config.strategy,
-            config=config.config
+            config=config.config,
+            status="running",
+            started_at=datetime.utcnow()
         )
         
         # Start bot in background
-        background_tasks.add_task(
-            bot_manager.start_bot,
-            current_user.id,
-            bot_instance.id
-        )
+        bot = EnhancedTradingBot(current_user.id, config.config, position_manager)
+        background_tasks.add_task(bot.run)
+        
+        await bot_manager.save_bot_instance(bot_instance)
         
         return BotStatusResponse(
             bot_id=str(bot_instance.id),
-            status="starting",
-            started_at=datetime.utcnow(),
+            status="running",
+            started_at=bot_instance.started_at,
             last_activity=datetime.utcnow(),
             total_trades=0,
             active_positions=0,
@@ -113,6 +126,7 @@ async def start_bot(
         )
         
     except Exception as e:
+        logger.error(f"Failed to start bot: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/bot/stop")
