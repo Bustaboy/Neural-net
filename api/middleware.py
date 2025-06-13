@@ -1,23 +1,33 @@
 # api/middleware.py
-from fastapi import FastAPI, HTTPException, Request
-from flask_jwt_extended import get_jwt_identity
+from fastapi import FastAPI, HTTPException, Request, Depends
+from jose import jwt, JWTError
 from config import ConfigManager
 from core.database import EnhancedDatabaseManager
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
+from fastapi.security import OAuth2PasswordBearer
 
 db_manager = EnhancedDatabaseManager()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+SECRET_KEY = ConfigManager.get_config("jwt_secret", "your_jwt_secret")
+ALGORITHM = "HS256"
 
 def setup_middleware(app: FastAPI):
-    async def subscription_middleware(request: Request):
-        user_id = get_jwt_identity()
+    async def subscription_middleware(request: Request, token: str = Depends(oauth2_scheme)):
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            user_id: str = payload.get("sub")
+            if user_id is None:
+                raise HTTPException(status_code=401, detail="Invalid token")
+            user_id = int(user_id)
+        except JWTError:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
         user = db_manager.fetch_one(
             "SELECT subscription_tier FROM users WHERE id = ?", (user_id,)
         )
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
         tier = user['subscription_tier']
-        max_trades = ConfigManager.get_config(f"subscriptions.tiers.{tier}.max_trades_per_day")
+        max_trades = ConfigManager.get_config(f"subscriptions.tiers.{tier}.max_trades_per_day", 100)
         trades_today = db_manager.fetch_one(
             "SELECT COUNT(*) FROM trades WHERE user_id = ? AND timestamp >= CURRENT_DATE",
             (user_id,)
@@ -27,10 +37,3 @@ def setup_middleware(app: FastAPI):
         return user_id
 
     app.dependency_overrides['subscription_middleware'] = subscription_middleware
-
-def setup_rate_limiter(app: FastAPI):
-    limiter = Limiter(
-        app,
-        key_func=lambda: get_jwt_identity() or get_remote_address(),
-        default_limits=["60 per minute"]
-    )
