@@ -10,18 +10,18 @@ import time
 
 class NeuralNetApp:
     def __init__(self, root):
-        """Initialize the cyberpunk trading interface."""
+        """Initialize the cyberpunk trading interface with central server."""
         self.root = root
         self.root.title("Neural-net: Night City Trader")
         self.root.geometry("800x600")
-        self.root.configure(bg='black')  # Neon dark background
-        self.api_url = "http://localhost:8000"  # Netrunner hub
-        self.ws_url = "ws://localhost:8000/trade_log"  # Data stream
-        self.token = None  # Access chip
-        self.user_id = None  # User ID in the grid
-        self.trade_log = []  # Cyberlog of actions
-        self.ws = None  # WebSocket connection
-        self.show_login_window()  # Enter the sprawl
+        self.root.configure(bg='black')
+        self.api_url = "http://<central-vps-ip>:80"  # Replace with central VPS IP
+        self.ws_url = "ws://<central-vps-ip>:8765/trade_log"  # Replace with central VPS IP
+        self.token = None
+        self.user_id = None
+        self.trade_log = []
+        self.ws = None
+        self.show_login_window()
 
     def show_login_window(self):
         """Display a cyberpunk login portal."""
@@ -63,7 +63,7 @@ class NeuralNetApp:
             else:
                 messagebox.showerror("Error", "Invalid handle or passcode. Try again, nova!", parent=self.login_window)
         except requests.RequestException:
-            messagebox.showerror("Error", "Net connection lost. Ensure server is online.", parent=self.login_window)
+            messagebox.showerror("Error", "Net connection lost. Ensure central server is online.", parent=self.login_window)
 
     def register(self):
         """Register a new profile in the system."""
@@ -80,7 +80,7 @@ class NeuralNetApp:
                 error = response.json().get("detail", "Registration glitch.")
                 messagebox.showerror("Error", f"Failed to jack in: {error}", parent=self.login_window)
         except requests.RequestException:
-            messagebox.showerror("Error", "Net connection lost. Ensure server is online.", parent=self.login_window)
+            messagebox.showerror("Error", "Net connection lost. Ensure central server is online.", parent=self.login_window)
 
     def setup_main_gui(self):
         """Create the cyberpunk main interface with tabs."""
@@ -91,21 +91,18 @@ class NeuralNetApp:
         style.configure("TButton", background="black", foreground="cyan")
         style.configure("TLabel", background="black", foreground="cyan")
 
-        # Create frames for each tab
         self.trading_frame = ttk.Frame(self.notebook)
         self.portfolio_frame = ttk.Frame(self.notebook)
         self.market_frame = ttk.Frame(self.notebook)
         self.settings_frame = ttk.Frame(self.notebook)
         self.help_frame = ttk.Frame(self.notebook)
 
-        # Add tabs to notebook
         self.notebook.add(self.trading_frame, text="Trade Hub")
         self.notebook.add(self.portfolio_frame, text="Asset Vault")
         self.notebook.add(self.market_frame, text="Data Net")
         self.notebook.add(self.settings_frame, text="Cyberdeck Config")
         self.notebook.add(self.help_frame, text="Netrunner’s Guide")
 
-        # Set up each tab
         self.setup_trading_tab()
         self.setup_portfolio_tab()
         self.setup_market_tab()
@@ -205,12 +202,11 @@ class NeuralNetApp:
                 self.exchange_api_entry.insert(0, keys.get("exchange_api_key", ""))
                 self.exchange_secret_entry.delete(0, tk.END)
                 self.exchange_secret_entry.insert(0, keys.get("exchange_secret", ""))
-                # Load testnet setting (placeholder; update schema if needed)
-                # self.testnet_var.set(db.execute("SELECT testnet FROM users WHERE id = :user_id", {"user_id": self.user_id}).fetchone()[0])
+                self.testnet_var.set(keys.get("testnet", False))
             else:
                 messagebox.showwarning("Warning", "Failed to decrypt access codes. Enter and upload new ones.")
         except requests.RequestException:
-            messagebox.showerror("Error", "Net connection lost. Ensure server is online.")
+            messagebox.showerror("Error", "Net connection lost. Ensure central server is online.")
 
     def save_settings(self):
         """Save API keys and testnet setting to backend."""
@@ -232,7 +228,7 @@ class NeuralNetApp:
                 error = response.json().get("detail", "Upload failed.")
                 messagebox.showerror("Error", f"Failed to upload codes: {error}")
         except requests.RequestException:
-            messagebox.showerror("Error", "Net connection lost. Ensure server is online.")
+            messagebox.showerror("Error", "Net connection lost. Ensure central server is online.")
 
     def make_trade(self, trade_type):
         """Send a netrun trade request to the backend."""
@@ -297,8 +293,8 @@ class NeuralNetApp:
                     self.portfolio_text.insert(tk.END, f"{asset.get('name', 'Unknown')}: ${asset.get('value', 0):.2f}\n")
                 total_value = sum([a['value'] for a in assets] + [portfolio.get('cash', 0)])
                 self.profit_label.config(text=f"Total Eddies: ${total_value:.2f}")
-                # Placeholder for top pairs (to be updated by WebSocket)
-                self.portfolio_text.insert(tk.END, "\nTop Targets: [Loading...]")
+                top_pairs = sorted(assets, key=lambda x: x.get('value', 0), reverse=True)[:3]
+                self.portfolio_text.insert(tk.END, f"\nTop Targets: {', '.join([p['name'] for p in top_pairs]) if top_pairs else 'None'}")
             else:
                 self.portfolio_text.delete(1.0, tk.END)
                 self.portfolio_text.insert(tk.END, "Error: Vault scan failed.\n")
@@ -308,10 +304,10 @@ class NeuralNetApp:
 
     def update_trade_log(self, message):
         """Update the cyberlog with new netrun actions."""
-        if message:  # Only append if a new message is provided
+        if message:
             self.trade_log.append(message)
         self.trade_log_text.delete(1.0, tk.END)
-        for log_entry in self.trade_log[-10:]:  # Show last 10 netrun entries
+        for log_entry in self.trade_log[-10:]:
             self.trade_log_text.insert(tk.END, f"{log_entry}\n")
 
     def on_websocket_message(self, ws, message):
