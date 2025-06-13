@@ -4,4 +4,6 @@ model:
   batch_size: 32
 data:
   source: alpha_vantage
-  symbols: ["BTC", "ETH"]
+  symbols: ["BTC/USDT", "ETH/USDT", "LTC/USDT", "XRP/USDT"]
+environment:
+  testnet: false  # Set to true for testnet, false for live
