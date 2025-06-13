@@ -1,14 +1,16 @@
 # ml/ensemble.py
 from stable_baselines3 import PPO
-from flower import FlowerClient  # Real federated learning library
+from flower import FlowerClient
 from typing import Dict, Any, List
 from core.database import EnhancedDatabaseManager
 import numpy as np
 import logging
-import chainlink_python  # Real Chainlink client
+import chainlink_python
 from scipy.optimize import minimize
 import psutil
 import pkg_resources
+import requests
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,8 @@ class EnsembleModel:
             "scalping": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/scalping"),
             "arbitrage": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/arbitrage"),
             "yield_farming": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/yield_farming"),
-            "rebalancing": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/rebalancing")
+            "rebalancing": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/rebalancing"),
+            "bear_market": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/bear_market")
         }
         self.model_path = model_path
         self.crowd_models = []
@@ -34,7 +37,6 @@ class EnsembleModel:
         self.run_diagnostics()
 
     def check_dependency(self, package: str) -> bool:
-        """Verify if a package is installed."""
         try:
             pkg_resources.get_distribution(package)
             return True
@@ -43,18 +45,16 @@ class EnsembleModel:
             return False
 
     def check_device_capacity(self) -> Dict[str, float]:
-        """Assess device resources for training."""
         try:
             return {
                 "cpu_percent": psutil.cpu_percent(),
-                "memory_available": psutil.virtual_memory().available / (1024 ** 3),  # GB
+                "memory_available": psutil.virtual_memory().available / (1024 ** 3),
             }
         except Exception as e:
             logger.error(f"Device capacity check error: {e}")
             return {"cpu_percent": 50.0, "memory_available": 4.0}
 
     def run_diagnostics(self):
-        """Run self-diagnostic to verify setup."""
         try:
             assert self.db_manager.test_connection(), "Database connection failed"
             assert any(self.agents.values()), "No RL agents initialized"
@@ -106,15 +106,50 @@ class EnsembleModel:
         except Exception as e:
             logger.error(f"Hyperparameter optimization error: {e}")
 
-    def train(self, market_data: Dict[str, Any], incremental: bool = False):
+    async def fetch_historical_bear_data(self) -> Dict[str, Any]:
+        """Fetch historical bear market data for training."""
         try:
-            if not self.validate_data(market_data):
+            # Mock historical data (2018, 2022 bear markets)
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: requests.get(
+                    "https://api.alpha-vantage.co/query",
+                    params={"function": "DIGITAL_CURRENCY_DAILY", "symbol": "BTC", "market": "USD", "apikey": "YOUR_ALPHA_VANTAGE_KEY"}
+                )
+            )
+            data = response.json()
+            bear_periods = [d for d in data["Time Series (Digital Currency Daily)"] if "2018" in d or "2022" in d]
+            return {
+                "price": np.mean([float(d["4. close"]) for d in bear_periods]),
+                "volatility": np.std([float(d["4. close"]) for d in bear_periods]) / np.mean([float(d["4. close"]) for d in bear_periods]),
+                "sentiment": -0.5,  # Assume bearish sentiment
+                "defi_apy": 0.1,  # Low APY in bear markets
+                "portfolio_weights": [0.25] * 4
+            }
+        except Exception as e:
+            logger.error(f"Bear market data fetch error: {e}")
+            return {
+                "price": 10000.0,
+                "volatility": 0.05,
+                "sentiment": -0.5,
+                "defi_apy": 0.1,
+                "portfolio_weights": [0.25] * 4
+            }
+
+    def train(self, market_data: Dict[str, Any], incremental: bool = False, server_side: bool = False):
+        try:
+            if not server_side and not self.validate_data(market_data):
                 logger.warning("Skipping training due to invalid data")
                 return
             env_data = self.prepare_env_data(market_data)
             timesteps = 500 if incremental and self.device_capacity["memory_available"] < 4.0 else 1000 if incremental else 20000
+            if server_side:
+                timesteps *= 2  # More timesteps on server
             for agent_name, agent in self.agents.items():
                 agent.set_parameters(self.hyperparameters[agent_name])
+                if agent_name == "bear_market" and not incremental:
+                    bear_data = asyncio.get_event_loop().run_until_complete(self.fetch_historical_bear_data())
+                    env_data.update(bear_data)
                 agent.learn(total_timesteps=timesteps, progress_bar=True)
                 for crowd_model in [m[1] for m in self.crowd_models if m[0] == agent_name]:
                     agent.load_parameters(crowd_model, exploration_fraction=self.hyperparameters[agent_name]["exploration_fraction"])
@@ -127,6 +162,24 @@ class EnsembleModel:
             self.share_model(market_data.get("performance_score", 0.95))
         except Exception as e:
             logger.error(f"Training error: {e}")
+
+    async def fetch_server_model(self) -> bool:
+        """Fetch updated model from server."""
+        try:
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: requests.get("http://localhost:8000/models/latest")
+            )
+            if response.status_code == 200:
+                model_data = response.json()
+                for agent_name in self.agents:
+                    self.agents[agent_name].load_parameters(model_data.get(agent_name, {}))
+                logger.info("Fetched updated server model")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Server model fetch error: {e}")
+            return False
 
     def share_model(self, performance_score: float):
         if performance_score > 0.9:
@@ -144,7 +197,7 @@ class EnsembleModel:
             "volatility": market_data.get("volatility", 0.01),
             "sentiment": market_data.get("sentiment", 0.0),
             "defi_apy": market_data.get("defi_apy", 0.5),
-            "portfolio_weights": market_data.get("portfolio_weights", [0.5, 0.5])
+            "portfolio_weights": market_data.get("portfolio_weights", [0.25] * 4)
         }
 
     def predict(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
