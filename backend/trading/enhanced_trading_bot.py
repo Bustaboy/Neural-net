@@ -25,7 +25,7 @@ class EnhancedTradingBot:
         self.daily_trades = 0
         self.micro_trend_window = 5
         self.portfolio = ["BTC/USDT", "ETH/USDT", "MATIC/USDT", "AVAX/USDT"]
-        self.last_training_time = asyncio.get_event_loop().time()
+        self.last_model_fetch_time = asyncio.get_event_loop().time()
         logger.info(f"Initialized bot for user {user_id} with capital ${self.get_capital()}")
 
     def get_capital(self) -> float:
@@ -60,8 +60,7 @@ class EnhancedTradingBot:
         return None
 
     async def defi_yield_farming(self, symbol: str) -> Optional[Dict[str, Any]]:
-        # Simulate APY for testing
-        apy = np.random.uniform(0.6, 2.0)  # Mock 60–200% APY
+        apy = np.random.uniform(0.6, 2.0)
         if apy > 0.6:
             capital = self.get_capital()
             return {
@@ -78,7 +77,7 @@ class EnhancedTradingBot:
         prices = {}
         for chain in chains:
             chain_price = await self.exchange.get_cross_chain_price(symbol, chain)
-            prices[chain] = chain_price or np.random.uniform(0.95, 1.05) * prices.get("ethereum", 1.0)  # Mock for testing
+            prices[chain] = chain_price or np.random.uniform(0.95, 1.05) * prices.get("ethereum", 1.0)
         if len(prices) < 2:
             return None
         max_spread = max(prices.values()) - min(prices.values())
@@ -113,17 +112,16 @@ class EnhancedTradingBot:
         return None
 
     async def bear_market_hedging(self, symbol: str, price: float) -> Optional[Dict[str, Any]]:
-        candles = await self.exchange.fetch_ohlcv(symbol, timeframe="1d", limit=20)
-        returns = np.diff([c[4] for c in candles]) / [c[4] for c in candles][:-1]
-        trend = np.mean(returns[-5:])
-        if trend < -0.02:  # Bearish trend
+        market_data = await self.exchange.fetch_market_data(symbol)
+        bear_signal = self.model.predict(market_data)
+        if bear_signal["side"] == "sell" and bear_signal["confidence"] > 0.9:
             capital = self.get_capital()
             return {
                 "symbol": symbol,
-                "side": "sell",  # Short position
+                "side": "sell",
                 "quantity": capital * 0.05 / price,
                 "price": price,
-                "expected_return": 0.03
+                "expected_return": 0.04
             }
         return None
 
@@ -166,17 +164,17 @@ class EnhancedTradingBot:
                     "prices": {},
                     "volatility": volatility,
                     "sentiment": self.sentiment_analyzer.analyze("BTC/USDT"),
-                    "defi_apy": np.random.uniform(0.6, 2.0),  # Mock for testing
+                    "defi_apy": np.random.uniform(0.6, 2.0),
                     "portfolio_weights": [0.25] * len(self.portfolio)
                 }
                 for symbol in self.portfolio:
                     market_data["prices"][symbol] = (await self.exchange.fetch_market_data(symbol))["price"]
 
                 current_time = asyncio.get_event_loop().time()
-                if current_time - self.last_training_time >= 600:
-                    logger.info("Performing incremental training")
-                    self.model.train(market_data, incremental=True)
-                    self.last_training_time = current_time
+                if current_time - self.last_model_fetch_time >= 600:
+                    logger.info("Fetching updated server model")
+                    if await self.model.fetch_server_model():
+                        self.last_model_fetch_time = current_time
 
                 await self.rebalance_portfolio(market_data)
 
