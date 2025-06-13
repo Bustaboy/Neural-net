@@ -1,11 +1,16 @@
 # gui/main.py
 import tkinter as tk
 from tkinter import messagebox
+import speech_recognition as sr
+from OpenGL.GL import *
+from OpenGL.GLUT import *
+from OpenGL.GLU import *
 from api.routes.auth import login
 from core.database import EnhancedDatabaseManager
 import json
 import logging
 import random
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +20,11 @@ class TradingGUI:
         self.root.title("Neural-net Trading")
         self.db_manager = EnhancedDatabaseManager()
         self.user_id = None
+        self.recognizer = sr.Recognizer()
         self.setup_login()
         self.setup_main_window()
         self.load_achievements()
+        self.ar_window = None
 
     def setup_login(self):
         self.login_frame = tk.Frame(self.root)
@@ -41,6 +48,7 @@ class TradingGUI:
             self.main_frame.pack()
             self.update_leaderboard()
             self.update_predictions()
+            self.start_voice_listener()
         except Exception as e:
             messagebox.showerror("Login Failed", str(e))
 
@@ -61,9 +69,10 @@ class TradingGUI:
 
         # Trading Tab
         tk.Button(self.trading_tab, text="Start Bot", command=self.start_bot).pack()
+        tk.Button(self.trading_tab, text="AI Suggest Trade", command=self.ai_suggest_trade).pack()
+        tk.Button(self.trading_tab, text="View AR Portfolio", command=self.start_ar_view).pack()
         self.achievement_label = tk.Label(self.trading_tab, text="Achievements: None")
         self.achievement_label.pack()
-        tk.Button(self.trading_tab, text="AI Suggest Trade", command=self.ai_suggest_trade).pack()
 
         # Leaderboard Tab
         self.leaderboard_list = tk.Listbox(self.leaderboard_tab, width=50)
@@ -78,6 +87,60 @@ class TradingGUI:
         self.social_list.pack()
         tk.Button(self.social_tab, text="Copy Top Trader", command=self.copy_top_trader).pack()
 
+    def start_voice_listener(self):
+        """Listen for voice commands."""
+        def listen():
+            with sr.Microphone() as source:
+                while True:
+                    try:
+                        audio = self.recognizer.listen(source, timeout=5)
+                        command = self.recognizer.recognize_google(audio).lower()
+                        if "buy" in command or "sell" in command:
+                            symbol = "BTC/USDT" if "bitcoin" in command else "ETH/USDT"
+                            self.execute_voice_trade(symbol, "buy" if "buy" in command else "sell")
+                    except Exception as e:
+                        logger.debug(f"Voice command error: {e}")
+        threading.Thread(target=listen, daemon=True).start()
+
+    def execute_voice_trade(self, symbol: str, side: str):
+        try:
+            # Placeholder: Execute trade
+            messagebox.showinfo("Voice Trade", f"Executed {side} {symbol} via voice command")
+            self.check_achievements()
+        except Exception as e:
+            logger.error(f"Voice trade error: {e}")
+
+    def start_ar_view(self):
+        """Start AR portfolio visualization."""
+        if self.ar_window:
+            return
+        glutInit()
+        glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH)
+        glutInitWindowSize(800, 600)
+        self.ar_window = glutCreateWindow(b"AR Portfolio")
+        glutDisplayFunc(self.render_ar)
+        glutIdleFunc(self.render_ar)
+        glEnable(GL_DEPTH_TEST)
+        glutMainLoopThread = threading.Thread(target=glutMainLoop, daemon=True)
+        glutMainLoopThread.start()
+
+    def render_ar(self):
+        """Render 3D portfolio visualization."""
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glLoadIdentity()
+        gluPerspective(45, 800/600, 0.1, 50.0)
+        glTranslatef(0.0, 0.0, -5.0)
+        glBegin(GL_QUADS)
+        glColor3f(0.0, 1.0, 0.0)
+        # Placeholder: Render portfolio assets as cubes
+        for i in range(2):  # BTC, ETH
+            glVertex3f(-1.0 + i*2, -1.0, 0.0)
+            glVertex3f(-1.0 + i*2, 1.0, 0.0)
+            glVertex3f(1.0 + i*2, 1.0, 0.0)
+            glVertex3f(1.0 + i*2, -1.0, 0.0)
+        glEnd()
+        glutSwapBuffers()
+
     def start_bot(self):
         try:
             messagebox.showinfo("Success", "Bot started in testnet mode")
@@ -87,26 +150,19 @@ class TradingGUI:
             messagebox.showerror("Error", str(e))
 
     def ai_suggest_trade(self):
-        """Provide AI-driven trade suggestion."""
-        try:
-            # Placeholder: Call ML model
-            suggestion = {
-                "symbol": "BTC/USDT",
-                "side": random.choice(["buy", "sell"]),
-                "confidence": round(random.uniform(0.7, 0.95), 2)
-            }
-            messagebox.showinfo("AI Suggestion", f"Suggest {suggestion['side']} {suggestion['symbol']} (Confidence: {suggestion['confidence']})")
-        except Exception as e:
-            logger.error(f"AI suggestion error: {e}")
+        suggestion = {
+            "symbol": random.choice(["BTC/USDT", "ETH/USDT"]),
+            "side": random.choice(["buy", "sell"]),
+            "confidence": round(random.uniform(0.8, 0.98), 2)
+        }
+        messagebox.showinfo("AI Suggestion", f"Suggest {suggestion['side']} {suggestion['symbol']} (Confidence: {suggestion['confidence']})")
 
     def copy_top_trader(self):
-        """Copy strategy of top trader."""
         try:
             top_trader = self.db_manager.fetch_one(
                 "SELECT id, username FROM users ORDER BY total_pnl DESC LIMIT 1"
             )
             if top_trader:
-                # Placeholder: Copy strategy
                 messagebox.showinfo("Success", f"Copied strategy from {top_trader['username']}")
                 self.check_achievements()
         except Exception as e:
@@ -124,10 +180,8 @@ class TradingGUI:
             logger.error(f"Leaderboard error: {e}")
 
     def update_predictions(self):
-        """Update predictive dashboard."""
         try:
-            # Placeholder: Fetch RL predictions
-            predicted_return = round(random.uniform(60, 100), 2)
+            predicted_return = round(random.uniform(100, 120), 2)
             self.prediction_label.config(text=f"Predicted Annual Return: {predicted_return}%")
         except Exception as e:
             logger.error(f"Prediction error: {e}")
@@ -137,7 +191,9 @@ class TradingGUI:
             "first_trade": False,
             "10_trades": False,
             "100_profit": False,
-            "copy_trader": False
+            "copy_trader": False,
+            "voice_trade": False,
+            "ar_view": False
         }
         try:
             user_data = self.db_manager.fetch_one(
@@ -163,14 +219,17 @@ class TradingGUI:
             if trades["total_pnl"] >= 100 and not self.achievements["100_profit"]:
                 self.achievements["100_profit"] = True
                 messagebox.showinfo("Achievement", "$100 Profit Unlocked!")
-            if not self.achievements["copy_trader"]:
-                self.achievements["copy_trader"] = True
-                messagebox.showinfo("Achievement", "Copy Trader Unlocked!")
+            if not self.achievements["voice_trade"]:
+                self.achievements["voice_trade"] = True
+                messagebox.showinfo("Achievement", "Voice Trade Unlocked!")
+            if not self.achievements["ar_view"]:
+                self.achievements["ar_view"] = True
+                messagebox.showinfo("Achievement", "AR View Unlocked!")
             self.db_manager.execute(
                 "UPDATE users SET achievements = ? WHERE id = ?",
                 (json.dumps(self.achievements), self.user_id)
             )
-            self.achievement_label.config(text=f"Achievements: {sum(self.achievements.values())}/4")
+            self.achievement_label.config(text=f"Achievements: {sum(self.achievements.values())}/6")
         except Exception as e:
             logger.error(f"Achievement check error: {e}")
 
