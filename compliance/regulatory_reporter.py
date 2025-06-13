@@ -8,12 +8,18 @@ logger = logging.getLogger(__name__)
 
 class RegulatoryReporter:
     def __init__(self):
-        self.api_key = "YOUR_COMPLIANCE_API_KEY"  # Replace with actual key
-        self.kyc_endpoint = "https://api.compliance-service.com/kyc"  # Mock endpoint
+        self.api_key = "YOUR_COMPLIANCE_API_KEY"
+        self.kyc_endpoint = "https://api.compliance-service.com/kyc"
 
     async def check_compliance(self, user_id: int, trade: Dict[str, Any]) -> bool:
-        """Check trade compliance in real-time."""
         try:
+            user_data = self.db_manager.fetch_one(
+                "SELECT kyc_status FROM users WHERE id = ?", (user_id,)
+            )
+            if user_data["kyc_status"] != "verified":
+                logger.warning(f"User {user_id} not KYC verified")
+                await self.notify_user(user_id, "Please complete KYC verification")
+                return False
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: requests.post(
@@ -29,13 +35,11 @@ class RegulatoryReporter:
             return False
         except Exception as e:
             logger.error(f"Compliance check error: {e}")
-            return True  # Fallback to allow trading
+            return True
 
     async def report_trade(self, user_id: int, trade: Dict[str, Any]):
-        """Report trade to regulatory authorities."""
         try:
             if await self.check_compliance(user_id, trade):
-                # Mock reporting
                 logger.info(f"Reported trade for user {user_id}: {trade}")
             else:
                 await self.notify_user(user_id, "Trade flagged for compliance review")
@@ -43,7 +47,6 @@ class RegulatoryReporter:
             logger.error(f"Trade reporting error: {e}")
 
     async def notify_user(self, user_id: int, message: str):
-        """Notify user of compliance issues."""
         try:
             from utils.notifications import NotificationManager
             notifier = NotificationManager()
