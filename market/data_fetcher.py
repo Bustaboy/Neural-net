@@ -1,16 +1,16 @@
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 from core.database import get_db
-import ccxt  # For Binance live data
+import ccxt  # For Binance integration
 import time
 import logging
 
 logger = logging.getLogger(__name__)
 
 def fetch_market_data(user_id: int, db: Session = Depends(get_db)):
-    """Fetch and store live market data using the user's API keys, with support for historical ingestion."""
+    """Fetch and store live market data using the user's API keys, aligned with testnet/live."""
     try:
-        # Fetch user's API keys
+        # Fetch user's API keys and testnet setting
         user = db.execute(
             "SELECT market_api_key, exchange_api_key, exchange_secret FROM users WHERE id = :user_id",
             {"user_id": user_id}
@@ -18,15 +18,21 @@ def fetch_market_data(user_id: int, db: Session = Depends(get_db)):
         if not user or not user.market_api_key or not user.exchange_api_key or not user.exchange_secret:
             raise HTTPException(status_code=400, detail="No API keys configured for this user")
 
-        market_api_key = user.market_api_key  # For Alpha Vantage or yfinance
+        market_api_key = user.market_api_key  # For Alpha Vantage (historical)
         exchange_api_key = user.exchange_api_key  # For Binance
         exchange_secret = user.exchange_secret  # For Binance
+
+        # Fetch testnet setting (placeholder; to be saved in users table or config)
+        testnet = False  # Default to live; update via GUI/config later
+        # Example: Fetch from users table if added (e.g., "SELECT testnet FROM users WHERE id = :user_id")
+        # testnet = db.execute("SELECT testnet FROM users WHERE id = :user_id", {"user_id": user_id}).fetchone()[0]
 
         # Initialize Binance client
         exchange = ccxt.binance({
             'apiKey': exchange_api_key,
             'secret': exchange_secret,
             'enableRateLimit': True,
+            'test': testnet  # True for testnet, False for live
         })
 
         # Trading pairs to monitor
