@@ -3,24 +3,27 @@ import telegram
 from typing import Dict, Any
 import asyncio
 import logging
-import web3  # Hypothetical web3.py for Ethereum
+import json
 
 logger = logging.getLogger(__name__)
 
 class NotificationManager:
     def __init__(self):
         self.bot = telegram.Bot(token="YOUR_TELEGRAM_BOT_TOKEN")  # Replace with actual token
-        self.community_chat_id = "@NeuralNetTrading"  # Replace with actual chat ID
-        self.w3 = web3.Web3(web3.HTTPProvider("YOUR_ETHEREUM_NODE"))  # Replace with node
-        self.nft_contract = "NEURAL_NFT_ADDRESS"  # Placeholder
-        self.token_contract = "NEURAL_TOKEN_ADDRESS"  # Placeholder
+        self.sharded_channels = {
+            0: "@NeuralNetTrading0",  # Replace with actual chat IDs
+            1: "@NeuralNetTrading1"
+        }
+        self.db_manager = EnhancedDatabaseManager()
+        self.mock_contract = {"tokens": {}, "nfts": {}, "proposals": {}}
 
     async def send_notification(self, user_id: int, message: str):
         try:
+            shard_id = user_id % len(self.sharded_channels)
             await self.bot.send_message(chat_id=user_id, text=message)
             if "Achievement" in message or "Profit" in message:
                 await self.bot.send_message(
-                    chat_id=self.community_chat_id,
+                    chat_id=self.sharded_channels[shard_id],
                     text=f"User {user_id} achieved: {message}"
                 )
                 await self.award_tokens(user_id, 20)
@@ -39,6 +42,9 @@ class NotificationManager:
                 "UPDATE users SET token_balance = token_balance + ? WHERE id = ?",
                 (amount, user_id)
             )
+            self.mock_contract["tokens"][user_id] = self.mock_contract["tokens"].get(user_id, 0) + amount
+            if sum(self.mock_contract["tokens"].values()) > 1000000:  # Vesting cap
+                amount = max(0, amount - (sum(self.mock_contract["tokens"].values()) - 1000000))
             await self.bot.send_message(
                 chat_id=user_id,
                 text=f"Awarded {amount} NEURAL tokens for your contribution!"
@@ -49,13 +55,11 @@ class NotificationManager:
 
     async def mint_strategy_nft(self, user_id: int):
         try:
-            # Placeholder: Mint NFT on Ethereum
-            self.w3.eth.contract(address=self.nft_contract).functions.mint(
-                user_id, "StrategyNFT"
-            ).transact()
+            nft_id = len(self.mock_contract["nfts"])
+            self.mock_contract["nfts"][nft_id] = {"owner": user_id, "strategy": "MockStrategy"}
             await self.bot.send_message(
                 chat_id=user_id,
-                text="Minted a Strategy NFT for your trading success!"
+                text=f"Minted Strategy NFT #{nft_id} for your trading success!"
             )
             logger.info(f"Minted Strategy NFT for user {user_id}")
         except Exception as e:
@@ -63,10 +67,9 @@ class NotificationManager:
 
     async def vote_on_proposal(self, user_id: int, proposal_id: int, vote: bool):
         try:
-            # Placeholder: On-chain governance
-            self.w3.eth.contract(address=self.token_contract).functions.vote(
-                proposal_id, vote
-            ).transact()
+            if proposal_id not in self.mock_contract["proposals"]:
+                self.mock_contract["proposals"][proposal_id] = {"yes": 0, "no": 0}
+            self.mock_contract["proposals"][proposal_id]["yes" if vote else "no"] += self.mock_contract["tokens"].get(user_id, 0)
             await self.bot.send_message(
                 chat_id=user_id,
                 text=f"Voted {'for' if vote else 'against'} proposal {proposal_id}"
