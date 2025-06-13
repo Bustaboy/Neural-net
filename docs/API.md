@@ -27,7 +27,7 @@ The world's most powerful retail crypto trading bot, revolutionizing trading wit
 
 ## AI Features
 - **Federated AI**: Server-side training with client data aggregation.
-- **Real-Time Training**: Asynchronous server updates every 10 minutes.
+- **Real-Time Training**: Asynchronous server updates every 30 minutes.
 - **Self-Optimizing**: AI-tuned hyperparameters.
 - **On-Chain Validation**: Chainlink oracles ensure data integrity.
 - **Bear Market AI**: Dedicated agent trained on 2018/2022 bear markets.
@@ -49,13 +49,13 @@ The world's most powerful retail crypto trading bot, revolutionizing trading wit
 ## Unique Features
 - **Voice Trading**: Robust commands for BTC, ETH, MATIC, AVAX.
 - **AR Visualization**: 3D portfolio view with CPU fallback.
-- **Compliance**: Real-time KYC/AML with user verification.
+- **Compliance**: Real-time KYC/AML with user verification via Lambda.
 
 ## Server Requirements (100,000 Users)
-- **Compute**: 16 CPU cores (e.g., AMD EPYC 7302), optional NVIDIA A10 GPU.
-- **Memory**: 32GB DDR4.
-- **Storage**: 1.5TB NVMe SSD.
-- **Network**: 10Gbps, ~3GB/s peak bandwidth.
-- **Cloud**: AWS EC2 m5.4xlarge (16 vCPUs, 64GB RAM) + EBS gp3 (1.5TB) + 10Gbps.
-- **Cost**: ~$1000/month (compute: $0.768/hour × 720 hours = $552, storage: $150, bandwidth: $300).
-- **Scaling**: Kubernetes auto-scaling (3–10 API replicas, 2–5 training replicas).
+- **Compute**: 10 CPU cores (AWS EC2 m5.2xlarge, 8 vCPUs).
+- **Memory**: 16GB DDR4.
+- **Storage**: 500GB NVMe SSD.
+- **Network**: 5Gbps, ~1.5GB/s peak bandwidth.
+- **Cloud**: AWS EC2 m5.2xlarge + EBS gp3 (500GB) + 5Gbps + Lambda.
+- **Cost**: ~$304/month (compute: $144 spot, storage: $50, bandwidth: $100, Lambda: $10).
+- **Scaling**: Kubernetes auto-scaling (2–5 API replicas, 1–3 training replicas, 60% CPU).
