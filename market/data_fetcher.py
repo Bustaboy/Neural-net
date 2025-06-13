@@ -4,12 +4,31 @@ from core.database import get_db
 import ccxt  # For Binance integration
 import time
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 def fetch_market_data(user_id: int, db: Session = Depends(get_db)):
-    """Fetch and store live market data using the user's API keys, aligned with testnet/live."""
+    """Fetch and store live market data using the user's API keys, respecting API limits."""
+    global api_request_count, last_request_time
+    api_request_count = getattr(fetch_market_data, 'api_request_count', 0)
+    last_request_time = getattr(fetch_market_data, 'last_request_time', datetime.utcnow())
+
     try:
+        # Check API limit (10 requests/second)
+        current_time = datetime.utcnow()
+        time_diff = (current_time - last_request_time).total_seconds()
+        if time_diff > 1:
+            api_request_count = 0
+            last_request_time = current_time
+        if api_request_count >= 10:  # Binance limit for ticker requests
+            logger.warning("API request limit reached, waiting...")
+            time.sleep(1)  # Wait 1 second to reset
+            api_request_count = 0
+        api_request_count += 1
+        setattr(fetch_market_data, 'api_request_count', api_request_count)
+        setattr(fetch_market_data, 'last_request_time', last_request_time)
+
         # Fetch user's API keys and testnet setting
         user = db.execute(
             "SELECT market_api_key, exchange_api_key, exchange_secret FROM users WHERE id = :user_id",
@@ -18,13 +37,12 @@ def fetch_market_data(user_id: int, db: Session = Depends(get_db)):
         if not user or not user.market_api_key or not user.exchange_api_key or not user.exchange_secret:
             raise HTTPException(status_code=400, detail="No API keys configured for this user")
 
-        market_api_key = user.market_api_key  # For Alpha Vantage (historical)
-        exchange_api_key = user.exchange_api_key  # For Binance
-        exchange_secret = user.exchange_secret  # For Binance
+        market_api_key = user.market_api_key
+        exchange_api_key = user.exchange_api_key
+        exchange_secret = user.exchange_secret
 
-        # Fetch testnet setting (placeholder; to be saved in users table or config)
-        testnet = False  # Default to live; update via GUI/config later
-        # Example: Fetch from users table if added (e.g., "SELECT testnet FROM users WHERE id = :user_id")
+        # Fetch testnet setting (placeholder; update schema if needed)
+        testnet = False  # Default to live; fetch from users table later
         # testnet = db.execute("SELECT testnet FROM users WHERE id = :user_id", {"user_id": user_id}).fetchone()[0]
 
         # Initialize Binance client
@@ -32,19 +50,17 @@ def fetch_market_data(user_id: int, db: Session = Depends(get_db)):
             'apiKey': exchange_api_key,
             'secret': exchange_secret,
             'enableRateLimit': True,
-            'test': testnet  # True for testnet, False for live
+            'test': testnet
         })
 
         # Trading pairs to monitor
         symbols = ["BTC/USDT", "ETH/USDT", "LTC/USDT", "XRP/USDT"]
         for symbol in symbols:
             try:
-                # Fetch live ticker data from Binance
                 ticker = exchange.fetch_ticker(symbol)
                 price = ticker['last']
                 change = ticker['percentage'] if 'percentage' in ticker else 0.0
-                # Placeholder RSI (to be calculated later with real data)
-                rsi = 50.0  # Dummy value; replace with technical analysis
+                rsi = 50.0  # Placeholder; replace with technical analysis
                 db.execute(
                     "INSERT INTO market_data (symbol, price, change, rsi, timestamp) VALUES (:symbol, :price, :change, :rsi, :timestamp)",
                     {"symbol": symbol, "price": price, "change": change, "rsi": rsi, "timestamp": datetime.utcnow()}
@@ -54,7 +70,6 @@ def fetch_market_data(user_id: int, db: Session = Depends(get_db)):
                 continue
         db.commit()
 
-        # Return latest data for the user
         latest = db.execute(
             "SELECT symbol, price, change, rsi FROM market_data ORDER BY timestamp DESC LIMIT 1"
         ).fetchone()
