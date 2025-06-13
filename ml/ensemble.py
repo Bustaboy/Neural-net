@@ -11,6 +11,7 @@ import psutil
 import pkg_resources
 import requests
 import asyncio
+from defi_sdk import DeFiClient  # Hypothetical DeFi SDK
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class EnsembleModel:
         self.db_manager = EnhancedDatabaseManager()
         self.fed_learner = FlowerClient(node_id="neural_net_node") if self.check_dependency("flower") else None
         self.chainlink = chainlink_python.Client("YOUR_CHAINLINK_NODE") if self.check_dependency("chainlink_python") else None
+        self.defi_client = DeFiClient("YOUR_DEFI_API_KEY") if self.check_dependency("defi_sdk") else None
         self.agents = {
             "scalping": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/scalping"),
             "arbitrage": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/arbitrage"),
@@ -62,6 +64,8 @@ class EnsembleModel:
                 logger.warning("Federated learning disabled; using local training")
             if not self.chainlink:
                 logger.warning("Chainlink validation disabled; using raw data")
+            if not self.defi_client:
+                logger.warning("DeFi data feed disabled; using mock data")
             logger.info("Diagnostics passed")
         except AssertionError as e:
             logger.error(f"Diagnostic failure: {e}")
@@ -107,9 +111,7 @@ class EnsembleModel:
             logger.error(f"Hyperparameter optimization error: {e}")
 
     async def fetch_historical_bear_data(self) -> Dict[str, Any]:
-        """Fetch historical bear market data for training."""
         try:
-            # Mock historical data (2018, 2022 bear markets)
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: requests.get(
@@ -122,8 +124,8 @@ class EnsembleModel:
             return {
                 "price": np.mean([float(d["4. close"]) for d in bear_periods]),
                 "volatility": np.std([float(d["4. close"]) for d in bear_periods]) / np.mean([float(d["4. close"]) for d in bear_periods]),
-                "sentiment": -0.5,  # Assume bearish sentiment
-                "defi_apy": 0.1,  # Low APY in bear markets
+                "sentiment": -0.5,
+                "defi_apy": 0.1,
                 "portfolio_weights": [0.25] * 4
             }
         except Exception as e:
@@ -136,7 +138,18 @@ class EnsembleModel:
                 "portfolio_weights": [0.25] * 4
             }
 
-    def train(self, market_data: Dict[str, Any], incremental: bool = False, server_side: bool = False):
+    async def fetch_defi_data(self, symbol: str) -> float:
+        """Fetch real-time DeFi APY."""
+        if not self.defi_client:
+            return np.random.uniform(0.6, 2.0)
+        try:
+            apy = await self.defi_client.get_apy(symbol)
+            return apy
+        except Exception as e:
+            logger.error(f"DeFi data fetch error: {e}")
+            return np.random.uniform(0.6, 2.0)
+
+    async def train(self, market_data: Dict[str, Any], incremental: bool = False, server_side: bool = False):
         try:
             if not server_side and not self.validate_data(market_data):
                 logger.warning("Skipping training due to invalid data")
@@ -144,13 +157,22 @@ class EnsembleModel:
             env_data = self.prepare_env_data(market_data)
             timesteps = 500 if incremental and self.device_capacity["memory_available"] < 4.0 else 1000 if incremental else 20000
             if server_side:
-                timesteps *= 2  # More timesteps on server
+                timesteps *= 2
+            # Asynchronous training
+            training_tasks = []
             for agent_name, agent in self.agents.items():
                 agent.set_parameters(self.hyperparameters[agent_name])
                 if agent_name == "bear_market" and not incremental:
-                    bear_data = asyncio.get_event_loop().run_until_complete(self.fetch_historical_bear_data())
+                    bear_data = await self.fetch_historical_bear_data()
                     env_data.update(bear_data)
-                agent.learn(total_timesteps=timesteps, progress_bar=True)
+                training_tasks.append(
+                    asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: agent.learn(total_timesteps=timesteps, progress_bar=True)
+                    )
+                )
+            await asyncio.gather(*training_tasks)
+            for agent_name, agent in self.agents.items():
                 for crowd_model in [m[1] for m in self.crowd_models if m[0] == agent_name]:
                     agent.load_parameters(crowd_model, exploration_fraction=self.hyperparameters[agent_name]["exploration_fraction"])
                 if incremental:
@@ -164,7 +186,6 @@ class EnsembleModel:
             logger.error(f"Training error: {e}")
 
     async def fetch_server_model(self) -> bool:
-        """Fetch updated model from server."""
         try:
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
