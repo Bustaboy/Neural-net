@@ -11,7 +11,8 @@ import psutil
 import pkg_resources
 import requests
 import asyncio
-from defi_sdk import DeFiClient  # Hypothetical DeFi SDK
+from defi_sdk import DeFiClient
+import torch  # For model pruning/quantization
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class EnsembleModel:
         self.device_capacity = self.check_device_capacity()
         self.load_crowd_models()
         self.run_diagnostics()
+        self.prune_and_quantize_models()
 
     def check_dependency(self, package: str) -> bool:
         try:
@@ -70,11 +72,24 @@ class EnsembleModel:
         except AssertionError as e:
             logger.error(f"Diagnostic failure: {e}")
 
+    def prune_and_quantize_models(self):
+        """Prune and quantize RL models to reduce compute/memory."""
+        try:
+            for agent_name, agent in self.agents.items():
+                model = agent.policy.to("cpu")
+                torch.nn.utils.prune.l1_unstructured(model, name="weight", amount=0.5)
+                quantized_model = torch.quantization.quantize_dynamic(model, {torch.nn.Linear}, dtype=torch.qint8)
+                agent.policy = quantized_model
+                logger.info(f"Pruned and quantized model for {agent_name}")
+        except Exception as e:
+            logger.error(f"Model pruning error: {e}")
+
     def load_crowd_models(self):
         models = self.db_manager.fetch_all(
             "SELECT model_data, agent_type FROM user_models WHERE performance_score > 0.9 ORDER BY performance_score DESC LIMIT 20"
         )
-        for model in models:
+        sampled_models = models[::10]  # Sample 10% to reduce storage
+        for model in sampled_models:
             self.crowd_models.append((model["agent_type"], np.frombuffer(model["model_data"])))
         logger.info(f"Loaded {len(self.crowd_models)} crowd-sourced models")
 
@@ -139,7 +154,6 @@ class EnsembleModel:
             }
 
     async def fetch_defi_data(self, symbol: str) -> float:
-        """Fetch real-time DeFi APY."""
         if not self.defi_client:
             return np.random.uniform(0.6, 2.0)
         try:
@@ -157,10 +171,10 @@ class EnsembleModel:
             env_data = self.prepare_env_data(market_data)
             timesteps = 500 if incremental and self.device_capacity["memory_available"] < 4.0 else 1000 if incremental else 20000
             if server_side:
-                timesteps *= 2
-            # Asynchronous training
+                timesteps = 1000  # Optimized for server
             training_tasks = []
-            for agent_name, agent in self.agents.items():
+            for agent_name in self.agents:  # Train one agent at a time
+                agent = self.agents[agent_name]
                 agent.set_parameters(self.hyperparameters[agent_name])
                 if agent_name == "bear_market" and not incremental:
                     bear_data = await self.fetch_historical_bear_data()
@@ -171,15 +185,18 @@ class EnsembleModel:
                         lambda: agent.learn(total_timesteps=timesteps, progress_bar=True)
                     )
                 )
-            await asyncio.gather(*training_tasks)
-            for agent_name, agent in self.agents.items():
+                await asyncio.gather(*training_tasks)
+                training_tasks.clear()
                 for crowd_model in [m[1] for m in self.crowd_models if m[0] == agent_name]:
                     agent.load_parameters(crowd_model, exploration_fraction=self.hyperparameters[agent_name]["exploration_fraction"])
                 if incremental:
                     self.optimize_hyperparameters(agent_name, env_data)
                 agent.save(f"{self.model_path}_{agent_name}")
             if self.fed_learner:
-                self.fed_learner.aggregate([agent.get_parameters() for agent in self.agents.values()])
+                await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self.fed_learner.aggregate([agent.get_parameters() for agent in self.agents.values()])
+                )
                 self.fed_learner.distribute(self.agents)
             self.share_model(market_data.get("performance_score", 0.95))
         except Exception as e:
