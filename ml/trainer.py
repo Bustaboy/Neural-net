@@ -7,19 +7,27 @@ import yfinance as yf
 from alpha_vantage.timeseries import TimeSeries
 import logging
 from fastapi import Depends, HTTPException
-from stable_baselines3 import DQN  # For RL
+from stable_baselines3 import DQN
+import torch  # For GPU (install later)
+import celery
 
 logger = logging.getLogger(__name__)
 
+app = celery.Celery('tasks', broker='redis://localhost:6379/0')
+
+@app.task
+def train_model_task(user_id, db_url):
+    db = DatabaseManager().Session(bind=create_engine(db_url))
+    # Training logic with GPU
+    return {"message": "Task completed"}
+
 def train_model(user_id: int, db: Session = Depends(get_db)):
-    """Train an adaptive central model with collaborative learning."""
     user = db.execute("SELECT market_api_key FROM users WHERE id = :user_id", {"user_id": user_id}).fetchone()
     if not user or not user.market_api_key:
         raise HTTPException(status_code=400, detail="No market API key configured")
 
     market_api_key = user.market_api_key
 
-    # Fetch live and historical data from all users
     market_data = db.execute("SELECT symbol, price, change, rsi, timestamp FROM market_data").fetchall()
     live_data = pd.DataFrame(market_data, columns=["symbol", "price", "change", "rsi", "timestamp"])
     live_data["feature"] = live_data["price"] * (1 + live_data["change"] / 100) + live_data["rsi"] / 100
@@ -55,12 +63,12 @@ def train_model(user_id: int, db: Session = Depends(get_db)):
         if data.empty:
             raise ValueError("No data available")
 
-    # Collaborative learning placeholder
-    # Fetch aggregated user trade data
-    # trade_data = db.execute("SELECT symbol, amount, type, timestamp FROM trades").fetchall()
-    # data = pd.concat([data, pd.DataFrame(trade_data, columns=["symbol", "amount", "type", "timestamp"])])
-    # env = CustomTradingEnv(data)  # Define with gym
-    # model = DQN("MlpPolicy", env, verbose=1)
+    # Placeholder for GPU-accelerated training
+    # if torch.cuda.is_available():
+    #     device = torch.device("cuda")
+    #     model = DQN("MlpPolicy", env, device=device, verbose=1)
+    # else:
+    #     model = DQN("MlpPolicy", env, verbose=1)
     # model.learn(total_timesteps=10000)
 
     X = data[["feature"]]
