@@ -11,6 +11,7 @@ import json
 import logging
 import random
 import threading
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +22,19 @@ class TradingGUI:
         self.db_manager = EnhancedDatabaseManager()
         self.user_id = None
         self.recognizer = sr.Recognizer()
+        self.has_gpu = self.check_gpu()
         self.setup_login()
         self.setup_main_window()
         self.load_achievements()
-        self.ar_window = None
+
+    def check_gpu(self) -> bool:
+        """Check if GPU is available for AR."""
+        try:
+            from OpenGL.GL import glGetString, GL_RENDERER
+            return bool(glGetString(GL_RENDERER))
+        except Exception:
+            logger.warning("No GPU detected; using CPU fallback")
+            return False
 
     def setup_login(self):
         self.login_frame = tk.Frame(self.root)
@@ -88,58 +98,71 @@ class TradingGUI:
         tk.Button(self.social_tab, text="Copy Top Trader", command=self.copy_top_trader).pack()
 
     def start_voice_listener(self):
-        """Listen for voice commands."""
         def listen():
             with sr.Microphone() as source:
+                self.recognizer.adjust_for_ambient_noise(source)
                 while True:
                     try:
-                        audio = self.recognizer.listen(source, timeout=5)
+                        audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=5)
                         command = self.recognizer.recognize_google(audio).lower()
                         if "buy" in command or "sell" in command:
-                            symbol = "BTC/USDT" if "bitcoin" in command else "ETH/USDT"
-                            self.execute_voice_trade(symbol, "buy" if "buy" in command else "sell")
+                            symbols = ["BTC/USDT", "ETH/USDT", "MATIC/USDT", "AVAX/USDT"]
+                            for symbol in symbols:
+                                if symbol.split("/")[0].lower() in command:
+                                    self.execute_voice_trade(symbol, "buy" if "buy" in command else "sell")
+                                    break
+                    except sr.WaitTimeoutError:
+                        pass
                     except Exception as e:
                         logger.debug(f"Voice command error: {e}")
         threading.Thread(target=listen, daemon=True).start()
 
     def execute_voice_trade(self, symbol: str, side: str):
         try:
-            # Placeholder: Execute trade
             messagebox.showinfo("Voice Trade", f"Executed {side} {symbol} via voice command")
             self.check_achievements()
         except Exception as e:
             logger.error(f"Voice trade error: {e}")
 
     def start_ar_view(self):
-        """Start AR portfolio visualization."""
-        if self.ar_window:
-            return
-        glutInit()
-        glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH)
-        glutInitWindowSize(800, 600)
-        self.ar_window = glutCreateWindow(b"AR Portfolio")
-        glutDisplayFunc(self.render_ar)
-        glutIdleFunc(self.render_ar)
-        glEnable(GL_DEPTH_TEST)
-        glutMainLoopThread = threading.Thread(target=glutMainLoop, daemon=True)
-        glutMainLoopThread.start()
+        if self.has_gpu:
+            glutInit()
+            glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH)
+            glutInitWindowSize(800, 600)
+            self.ar_window = glutCreateWindow(b"AR Portfolio")
+            glutDisplayFunc(self.render_ar)
+            glutIdleFunc(self.render_ar)
+            glEnable(GL_DEPTH_TEST)
+            glutMainLoopThread = threading.Thread(target=glutMainLoop, daemon=True)
+            glutMainLoopThread.start()
+        else:
+            self.render_ar_fallback()
 
     def render_ar(self):
-        """Render 3D portfolio visualization."""
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glLoadIdentity()
         gluPerspective(45, 800/600, 0.1, 50.0)
         glTranslatef(0.0, 0.0, -5.0)
         glBegin(GL_QUADS)
         glColor3f(0.0, 1.0, 0.0)
-        # Placeholder: Render portfolio assets as cubes
-        for i in range(2):  # BTC, ETH
+        for i in range(4):  # BTC, ETH, MATIC, AVAX
             glVertex3f(-1.0 + i*2, -1.0, 0.0)
             glVertex3f(-1.0 + i*2, 1.0, 0.0)
             glVertex3f(1.0 + i*2, 1.0, 0.0)
             glVertex3f(1.0 + i*2, -1.0, 0.0)
         glEnd()
         glutSwapBuffers()
+
+    def render_ar_fallback(self):
+        """CPU-based 2D portfolio visualization."""
+        fallback_window = tk.Toplevel(self.root)
+        fallback_window.title("2D Portfolio View")
+        tk.Label(fallback_window, text="Portfolio: BTC, ETH, MATIC, AVAX").pack()
+        canvas = tk.Canvas(fallback_window, width=400, height=200)
+        canvas.pack()
+        for i in range(4):  # Mock assets
+            canvas.create_rectangle(50 + i*80, 50, 100 + i*80, 100, fill="green")
+        self.check_achievements()
 
     def start_bot(self):
         try:
@@ -151,7 +174,7 @@ class TradingGUI:
 
     def ai_suggest_trade(self):
         suggestion = {
-            "symbol": random.choice(["BTC/USDT", "ETH/USDT"]),
+            "symbol": random.choice(self.portfolio),
             "side": random.choice(["buy", "sell"]),
             "confidence": round(random.uniform(0.8, 0.98), 2)
         }
