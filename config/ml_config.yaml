@@ -1,9 +1,24 @@
+# ml_config.yaml
 model:
   type: ensemble
-  epochs: 10
+  algorithms: [xgboost, lightgbm]
+  params:
+    xgboost:
+      learning_rate: 0.05
+      max_depth: 7
+      n_estimators: 200
+    lightgbm:
+      learning_rate: 0.03
+      num_leaves: 31
+      n_estimators: 200
+features:
+  volatility: 0.3
+  volume: 0.2
+  sentiment: 0.15
+  price_momentum: 0.15
+  rsi: 0.1
+  macd: 0.1
+training:
+  validation_split: 0.2
+  epochs: 100
   batch_size: 32
-data:
-  source: alpha_vantage
-  symbols: ["BTC/USDT", "ETH/USDT", "LTC/USDT", "XRP/USDT"]
-environment:
-  testnet: false  # Set to true for testnet, false for live
