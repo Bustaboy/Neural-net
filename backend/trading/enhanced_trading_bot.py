@@ -24,7 +24,8 @@ class EnhancedTradingBot:
         self.max_daily_trades = self.calculate_max_trades()
         self.daily_trades = 0
         self.micro_trend_window = 5
-        self.portfolio = ["BTC/USDT", "ETH/USDT"]  # Multi-asset
+        self.portfolio = ["BTC/USDT", "ETH/USDT"]
+        self.last_training_time = asyncio.get_event_loop().time()
         logger.info(f"Initialized bot for user {user_id} with capital ${self.get_capital()}")
 
     def get_capital(self) -> float:
@@ -97,7 +98,7 @@ class EnhancedTradingBot:
             }
         return None
 
-    async def social_sentiment_arbitrage(self, symbol: str) -> Optional[Dict[str, Any]):
+    async def social_sentiment_arbitrage(self, symbol: str) -> Optional[Dict[str, Any]]:
         sentiment_score = self.sentiment_analyzer.analyze(symbol)
         if abs(sentiment_score) > 0.9:
             market_data = await self.exchange.fetch_market_data(symbol)
@@ -147,6 +148,7 @@ class EnhancedTradingBot:
                     continue
 
                 market_data = {
+                    "symbol": "BTC/USDT",
                     "prices": {},
                     "volatility": volatility,
                     "sentiment": self.sentiment_analyzer.analyze("BTC/USDT"),
@@ -155,6 +157,13 @@ class EnhancedTradingBot:
                 }
                 for symbol in self.portfolio:
                     market_data["prices"][symbol] = (await self.exchange.fetch_market_data(symbol))["price"]
+
+                # Incremental training every 10 minutes
+                current_time = asyncio.get_event_loop().time()
+                if current_time - self.last_training_time >= 600:  # 10 minutes
+                    logger.info("Performing incremental training")
+                    self.model.train(market_data, incremental=True)
+                    self.last_training_time = current_time
 
                 await self.rebalance_portfolio(market_data)
 
@@ -184,7 +193,7 @@ class EnhancedTradingBot:
                         self.daily_trades += 1
                         self.position_manager.update_portfolio(self.user_id, trade)
 
-                await asyncio.sleep(60)  # 1 minute
+                await asyncio.sleep(60)
             except Exception as e:
                 logger.error(f"Trading error: {e}")
                 await asyncio.sleep(60)
