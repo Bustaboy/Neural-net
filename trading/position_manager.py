@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 
 def update_position(user_id: int, symbol: str, amount: float, trade_type: str, db: Session = Depends(get_db)):
-    """Update user position with dynamic hedging support."""
+    """Update user position with micro-positions, tax vault, and staking support."""
     portfolio = db.execute("SELECT id, cash FROM portfolio WHERE user_id = :user_id", {"user_id": user_id}).fetchone()
     if not portfolio:
         db.execute("INSERT INTO portfolio (user_id, cash) VALUES (:user_id, 1000.0)", {"user_id": user_id})
@@ -23,22 +23,25 @@ def update_position(user_id: int, symbol: str, amount: float, trade_type: str, d
     value = amount * price
 
     if trade_type == "buy":
-        if not traded_asset or traded_asset[1] < value:
-            if cash < value:
-                raise ValueError("Insufficient eddies for netrun.")
-            db.execute("UPDATE portfolio SET cash = cash - :value WHERE id = :id", {"value": value, "id": portfolio_id})
+        if cash < value:
+            raise ValueError("Insufficient eddies for netrun.")
+        db.execute("UPDATE portfolio SET cash = cash - :value WHERE id = :id", {"value": value, "id": portfolio_id})
         if not traded_asset:
             db.execute("INSERT INTO assets (portfolio_id, name, value) VALUES (:portfolio_id, :symbol, :value)", {"portfolio_id": portfolio_id, "symbol": symbol, "value": value})
         else:
             new_value = traded_asset[1] + value
             db.execute("UPDATE assets SET value = :value WHERE id = :id", {"value": new_value, "id": traded_asset[0]})
-        # Revert to USDT
+        # Revert to USDT, tax, and staking
         if traded_asset:
             db.execute("DELETE FROM assets WHERE id = :id", {"id": traded_asset[0]})
         else:
             db.execute("UPDATE assets SET value = value - :value WHERE id = :id", {"value": value, "id": usdt_id})
         new_usdt_value = usdt_value + value
         db.execute("UPDATE assets SET value = :value WHERE id = :id", {"value": new_usdt_value, "id": usdt_id})
+        # Staking placeholder
+        if symbol == "USDT":
+            staking_reward = value * 0.01  # 1% annual reward (placeholder)
+            db.execute("INSERT INTO assets (portfolio_id, name, value) VALUES (:portfolio_id, 'Staking Reward', :value)", {"portfolio_id": portfolio_id, "value": staking_reward})
     elif trade_type == "sell":
         if traded_asset and traded_asset[1] >= value:
             new_value = traded_asset[1] - value
@@ -46,14 +49,13 @@ def update_position(user_id: int, symbol: str, amount: float, trade_type: str, d
                 db.execute("DELETE FROM assets WHERE id = :id", {"id": traded_asset[0]})
             else:
                 db.execute("UPDATE assets SET value = :value WHERE id = :id", {"value": new_value, "id": traded_asset[0]})
-        # Revert to USDT
+        # Revert to USDT, hedging, and tax
         if traded_asset:
             db.execute("UPDATE assets SET value = value + :value WHERE id = :id", {"value": value, "id": usdt_id})
         else:
             db.execute("UPDATE assets SET value = value + :value WHERE id = :id", {"value": value, "id": usdt_id})
-        # Hedging adjustment (placeholder)
-        if trade_type == "sell" and "USDT" not in symbol:
+        if "USDT" not in symbol:
             hedge_symbol = "ETH/USDT" if "BTC" in symbol else "BTC/USDT"
-            hedge_value = value * 0.5  # 50% hedge
+            hedge_value = value * 0.5
             db.execute("INSERT INTO assets (portfolio_id, name, value) VALUES (:portfolio_id, :symbol, :value)", {"portfolio_id": portfolio_id, "symbol": hedge_symbol, "value": -hedge_value})
     db.commit()
