@@ -1,7 +1,7 @@
 # Neural-net Trading API
 
 ## Overview
-The world's most powerful retail crypto trading bot, revolutionizing trading with federated AI, cross-chain strategies, voice/AR interfaces, and a decentralized ecosystem.
+The world's most powerful retail crypto trading bot, revolutionizing trading with federated AI, real-time training, cross-chain strategies, voice/AR interfaces, and on-chain governance.
 
 ## Subscription Model
 - **Freemium**: Ad-supported, 2 trades/day, basic ML, no voice/AR.
@@ -19,8 +19,14 @@ The world's most powerful retail crypto trading bot, revolutionizing trading wit
 
 ## Performance
 - **Target Returns**: 100–120% annualized for $500 capital.
-- **Net Earnings**: $387.50–$487.50/year after $60 subscription and $62.50 fees.
+- **Net Earnings**: $387.50–$487.50/year after $50 subscription (ad-adjusted) and $62.50 fees.
 - **Transparency**: Real-time metrics, on-chain performance audits.
+
+## AI Features
+- **Federated AI**: Global, private model training across users.
+- **Real-Time Training**: Incremental updates every 10 minutes during runtime.
+- **Self-Optimizing**: AI-tuned hyperparameters for maximum performance.
+- **On-Chain Validation**: Chainlink oracles ensure data integrity.
 
 ## Community
 - **Telegram**: @NeuralNetTrading for strategy sharing, support, governance.
@@ -36,6 +42,5 @@ The world's most powerful retail crypto trading bot, revolutionizing trading wit
 - **Portfolio Rebalancing**: AI-driven asset allocation.
 
 ## Unique Features
-- **Federated AI**: Global, private model training across users.
 - **Voice Trading**: Execute trades via voice commands.
 - **AR Visualization**: 3D portfolio view.
