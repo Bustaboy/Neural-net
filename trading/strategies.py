@@ -1,12 +1,10 @@
-# trading/strategies.py
-from typing import Dict
-import numpy as np
+from sqlalchemy.orm import Session
+from core.database import get_db
+from ml.ensemble import predict
 
-class TradingStrategy:
-    def __init__(self, config: Dict):
-        self.config = config
-
-    def momentum_strategy(self, features: np.ndarray) -> str:
-        threshold = self.config.get('trade.threshold', 0.1)
-        prediction = features[-1]  # Assume last feature is prediction
-        return "buy" if prediction > threshold else "sell" if prediction < -threshold else "hold"
+def get_trading_strategy(user_id: int, db: Session = Depends(get_db)):
+    """Determine trading strategy using the central model."""
+    predictions = predict(db)
+    if not predictions or not predictions["predictions"]:
+        return None
+    return {"symbol": "BTC", "amount": 0.01, "type": "buy" if predictions["predictions"][0] > 0.5 else "sell"}
