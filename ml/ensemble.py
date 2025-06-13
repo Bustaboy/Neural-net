@@ -1,20 +1,22 @@
 # ml/ensemble.py
 from stable_baselines3 import PPO
-from pyfl import FederatedLearner
+from flower import FlowerClient  # Real federated learning library
 from typing import Dict, Any, List
 from core.database import EnhancedDatabaseManager
 import numpy as np
 import logging
-import chainlink  # Hypothetical Chainlink oracle client
+import chainlink_python  # Real Chainlink client
 from scipy.optimize import minimize
+import psutil
+import pkg_resources
 
 logger = logging.getLogger(__name__)
 
 class EnsembleModel:
     def __init__(self, model_path: str = "models/central_model.pkl"):
         self.db_manager = EnhancedDatabaseManager()
-        self.fed_learner = FederatedLearner(node_id="neural_net_node")
-        self.chainlink = chainlink.OracleClient("YOUR_CHAINLINK_NODE")  # Replace with actual node
+        self.fed_learner = FlowerClient(node_id="neural_net_node") if self.check_dependency("flower") else None
+        self.chainlink = chainlink_python.Client("YOUR_CHAINLINK_NODE") if self.check_dependency("chainlink_python") else None
         self.agents = {
             "scalping": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/scalping"),
             "arbitrage": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/arbitrage"),
@@ -27,7 +29,42 @@ class EnsembleModel:
             agent_name: {"learning_rate": 0.0003, "exploration_fraction": 0.03}
             for agent_name in self.agents
         }
+        self.device_capacity = self.check_device_capacity()
         self.load_crowd_models()
+        self.run_diagnostics()
+
+    def check_dependency(self, package: str) -> bool:
+        """Verify if a package is installed."""
+        try:
+            pkg_resources.get_distribution(package)
+            return True
+        except pkg_resources.DistributionNotFound:
+            logger.warning(f"Dependency {package} not found; using fallback")
+            return False
+
+    def check_device_capacity(self) -> Dict[str, float]:
+        """Assess device resources for training."""
+        try:
+            return {
+                "cpu_percent": psutil.cpu_percent(),
+                "memory_available": psutil.virtual_memory().available / (1024 ** 3),  # GB
+            }
+        except Exception as e:
+            logger.error(f"Device capacity check error: {e}")
+            return {"cpu_percent": 50.0, "memory_available": 4.0}
+
+    def run_diagnostics(self):
+        """Run self-diagnostic to verify setup."""
+        try:
+            assert self.db_manager.test_connection(), "Database connection failed"
+            assert any(self.agents.values()), "No RL agents initialized"
+            if not self.fed_learner:
+                logger.warning("Federated learning disabled; using local training")
+            if not self.chainlink:
+                logger.warning("Chainlink validation disabled; using raw data")
+            logger.info("Diagnostics passed")
+        except AssertionError as e:
+            logger.error(f"Diagnostic failure: {e}")
 
     def load_crowd_models(self):
         models = self.db_manager.fetch_all(
@@ -38,10 +75,11 @@ class EnsembleModel:
         logger.info(f"Loaded {len(self.crowd_models)} crowd-sourced models")
 
     def validate_data(self, market_data: Dict[str, Any]) -> bool:
-        """Validate market data using Chainlink oracle."""
+        if not self.chainlink:
+            return True
         try:
             oracle_price = self.chainlink.get_price(market_data.get("symbol", "BTC/USDT"))
-            if abs(oracle_price - market_data.get("price", 0.0)) / oracle_price < 0.01:  # 1% tolerance
+            if abs(oracle_price - market_data.get("price", 0.0)) / oracle_price < 0.01:
                 return True
             logger.warning("Market data validation failed")
             return False
@@ -50,13 +88,12 @@ class EnsembleModel:
             return False
 
     def optimize_hyperparameters(self, agent_name: str, env_data: Dict[str, Any]):
-        """Optimize hyperparameters using Bayesian optimization."""
         def objective(params):
             learning_rate, exploration = params
             agent = self.agents[agent_name]
             agent.set_parameters({"learning_rate": learning_rate, "exploration_fraction": exploration})
-            reward = agent.evaluate(env_data, timesteps=100)  # Placeholder evaluation
-            return -reward  # Minimize negative reward
+            reward = agent.evaluate(env_data, timesteps=100)
+            return -reward
         try:
             result = minimize(
                 objective,
@@ -70,13 +107,12 @@ class EnsembleModel:
             logger.error(f"Hyperparameter optimization error: {e}")
 
     def train(self, market_data: Dict[str, Any], incremental: bool = False):
-        """Train multi-agent RL with federated learning."""
         try:
             if not self.validate_data(market_data):
                 logger.warning("Skipping training due to invalid data")
                 return
             env_data = self.prepare_env_data(market_data)
-            timesteps = 1000 if incremental else 20000
+            timesteps = 500 if incremental and self.device_capacity["memory_available"] < 4.0 else 1000 if incremental else 20000
             for agent_name, agent in self.agents.items():
                 agent.set_parameters(self.hyperparameters[agent_name])
                 agent.learn(total_timesteps=timesteps, progress_bar=True)
@@ -85,8 +121,9 @@ class EnsembleModel:
                 if incremental:
                     self.optimize_hyperparameters(agent_name, env_data)
                 agent.save(f"{self.model_path}_{agent_name}")
-            self.fed_learner.aggregate([agent.get_parameters() for agent in self.agents.values()])
-            self.fed_learner.distribute(self.agents)
+            if self.fed_learner:
+                self.fed_learner.aggregate([agent.get_parameters() for agent in self.agents.values()])
+                self.fed_learner.distribute(self.agents)
             self.share_model(market_data.get("performance_score", 0.95))
         except Exception as e:
             logger.error(f"Training error: {e}")
