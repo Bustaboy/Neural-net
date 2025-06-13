@@ -86,3 +86,6 @@ pyotp>=2.8.0
 
 #Payments
 stripe>=5.0.0
+
+ccxt  # For live Binance data
+yfinance  # For 20 years of historical data
