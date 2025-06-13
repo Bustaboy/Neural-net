@@ -8,6 +8,7 @@ from ml.ensemble import EnsembleModel
 import logging
 import asyncio
 import numpy as np
+import zstd  # For compression
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ class EnhancedTradingBot:
         return None
 
     async def defi_yield_farming(self, symbol: str) -> Optional[Dict[str, Any]]:
-        apy = np.random.uniform(0.6, 2.0)
+        apy = await self.model.fetch_defi_data(symbol)
         if apy > 0.6:
             capital = self.get_capital()
             return {
@@ -164,14 +165,14 @@ class EnhancedTradingBot:
                     "prices": {},
                     "volatility": volatility,
                     "sentiment": self.sentiment_analyzer.analyze("BTC/USDT"),
-                    "defi_apy": np.random.uniform(0.6, 2.0),
+                    "defi_apy": await self.model.fetch_defi_data("BTC/USDT"),
                     "portfolio_weights": [0.25] * len(self.portfolio)
                 }
                 for symbol in self.portfolio:
                     market_data["prices"][symbol] = (await self.exchange.fetch_market_data(symbol))["price"]
 
                 current_time = asyncio.get_event_loop().time()
-                if current_time - self.last_model_fetch_time >= 600:
+                if current_time - self.last_model_fetch_time >= 1800:  # 30 minutes
                     logger.info("Fetching updated server model")
                     if await self.model.fetch_server_model():
                         self.last_model_fetch_time = current_time
@@ -206,7 +207,7 @@ class EnhancedTradingBot:
                         self.daily_trades += 1
                         self.position_manager.update_portfolio(self.user_id, trade)
 
-                await asyncio.sleep(60)
+                await asyncio.sleep(300)  # 5 seconds for WebSocket updates
             except Exception as e:
                 logger.error(f"Trading error: {e}")
                 await asyncio.sleep(60)
@@ -220,5 +221,6 @@ class EnhancedTradingBot:
             stop_loss=trade.get("stop_loss"),
             take_profit=trade.get("take_profit")
         )
-        logger.info(f"Executed trade: {order}")
+        compressed_order = zstd.compress(json.dumps(order).encode())
+        logger.info(f"Executed trade: {compressed_order}")
         self.position_manager.add_trade(self.user_id, order)
