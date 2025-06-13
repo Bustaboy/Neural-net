@@ -2,6 +2,8 @@ import uvicorn
 import asyncio
 import websockets
 import threading
+import shutil
+import os
 from api.app import app
 import logging
 
@@ -16,28 +18,41 @@ async def websocket_server(websocket, path):
             logger.info(f"Broadcasting trade update: {data['message']}")
             await websocket.send(json.dumps(data))
 
+async def backup_database():
+    """Automated backup of database (placeholder)."""
+    while True:
+        try:
+            db_path = os.environ.get("DB_PATH", "neuralnet.db")
+            backup_path = f"backups/neuralnet_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+            os.makedirs("backups", exist_ok=True)
+            shutil.copy2(db_path, backup_path)
+            logger.info(f"Database backed up to {backup_path}")
+        except Exception as e:
+            logger.error(f"Backup failed: {e}")
+        await asyncio.sleep(86400)  # Daily backup
+
 async def main():
-    # Launch FastAPI server for central backend
     config = uvicorn.Config(app, host="0.0.0.0", port=8000)
     server = uvicorn.Server(config)
     await server.serve()
 
-    # Launch WebSocket server
     start_server = websockets.serve(websocket_server, "0.0.0.0", 8765)
     await start_server
+    asyncio.create_task(backup_database())
 
 if __name__ == "__main__":
-    # Placeholder for central server deployment
-    # To run on a central VPS with load balancing:
-    # 1. Deploy on DigitalOcean Singapore ($5/month) or AWS with ELB.
-    # 2. Install: sudo apt update && sudo apt install python3-pip nginx
-    # 3. Clone repo: git clone https://github.com/your-username/Neural-net.git
-    # 4. Install dependencies: pip3 install -r Requirements.txt websockets
-    # 5. Configure Nginx as load balancer (multiple VPS instances):
-    #    - Edit /etc/nginx/sites-available/neural-net:
+    # Placeholder for central server with failover and backups
+    # To run with failover and backups:
+    # 1. Deploy primary VPS in Singapore (e.g., DigitalOcean $5/month).
+    # 2. Deploy secondary VPS in US (e.g., $5/month) as failover.
+    # 3. Install: sudo apt update && sudo apt install python3-pip nginx
+    # 4. Clone repo: git clone https://github.com/your-username/Neural-net.git
+    # 5. Install dependencies: pip3 install -r Requirements.txt websockets
+    # 6. Configure Nginx on primary:
+    #    - /etc/nginx/sites-available/neural-net:
     #      upstream neuralnet {
-    #          server <vps1-ip>:8000;
-    #          server <vps2-ip>:8000;
+    #          server <primary-vps-ip>:8000;
+    #          server <secondary-vps-ip>:8000 backup;
     #      }
     #      server {
     #          listen 80;
@@ -45,5 +60,5 @@ if __name__ == "__main__":
     #              proxy_pass http://neuralnet;
     #          }
     #      }
-    # 6. Run: python3 start_app.py on each VPS
+    # 7. Run: python3 start_app.py on both VPS
     asyncio.run(main())
