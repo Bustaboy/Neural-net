@@ -16,6 +16,7 @@ xgboost>=2.0.0
 lightgbm>=4.1.0
 stable-baselines3>=2.0.0
 pyfl>=1.0.0  # Hypothetical federated learning
+chainlink>=0.1.0  # Hypothetical Chainlink oracle
 
 # Web Framework & API
 flask>=3.0.0
@@ -60,9 +61,9 @@ pytz>=2023.3
 requests>=2.31.0
 click>=8.1.0
 tabulate>=0.9.0
-speech_recognition>=3.10.0  # Voice commands
-pyopengl>=3.1.0  # AR visualization
-web3>=6.0.0  # Blockchain interactions
+speech_recognition>=3.10.0
+pyopengl>=3.1.0
+web3>=6.0.0
 
 # Development & Testing
 pytest>=7.4.0
