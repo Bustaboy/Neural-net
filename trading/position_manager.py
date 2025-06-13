@@ -1,33 +1,45 @@
-# trading/position_manager.py
-from typing import Dict, List
-from core.database import EnhancedDatabaseManager
-import logging
+from sqlalchemy.orm import Session
+from core.database import get_db
 
-class PositionManager:
-    def __init__(self, db_manager: EnhancedDatabaseManager):
-        self.db_manager = db_manager
-        self.logger = logging.getLogger(__name__)
+def update_position(user_id: int, symbol: str, amount: float, trade_type: str, db: Session = Depends(get_db)):
+    """Update user position based on trade."""
+    portfolio = db.execute(
+        "SELECT id FROM portfolio WHERE user_id = :user_id",
+        {"user_id": user_id}
+    ).fetchone()
+    if not portfolio:
+        db.execute(
+            "INSERT INTO portfolio (user_id, cash) VALUES (:user_id, 1000.0)",
+            {"user_id": user_id}
+        )
+        db.commit()
+        portfolio = db.execute("SELECT id FROM portfolio WHERE user_id = :user_id", {"user_id": user_id}).fetchone()
 
-    def get_open_positions(self, user_id: int) -> List[Dict]:
-        try:
-            positions = self.db_manager.execute(
-                "SELECT id, symbol, amount, value FROM positions WHERE user_id = ? AND status = 'open'",
-                (user_id,)
+    asset = db.execute(
+        "SELECT id, value FROM assets WHERE portfolio_id = :portfolio_id AND name = :symbol",
+        {"portfolio_id": portfolio.id, "symbol": symbol}
+    ).fetchone()
+    price = 60000.75  # Dummy price; replace with market data later
+    if trade_type == "buy":
+        if not asset:
+            db.execute(
+                "INSERT INTO assets (portfolio_id, name, value) VALUES (:portfolio_id, :symbol, :amount)",
+                {"portfolio_id": portfolio.id, "symbol": symbol, "amount": amount * price}
             )
-            return [
-                {"id": p[0], "symbol": p[1], "amount": p[2], "value": p[3]}
-                for p in positions
-            ]
-        except Exception as e:
-            self.logger.error(f"Failed to fetch positions: {e}")
-            raise
-
-    def close_position(self, position_id: int):
-        try:
-            self.db_manager.execute(
-                "UPDATE positions SET status = 'closed' WHERE id = ?",
-                (position_id,)
+        else:
+            new_value = asset.value + (amount * price)
+            db.execute(
+                "UPDATE assets SET value = :value WHERE id = :id",
+                {"value": new_value, "id": asset.id}
             )
-        except Exception as e:
-            self.logger.error(f"Failed to close position: {e}")
-            raise
+    elif trade_type == "sell":
+        if asset and asset.value >= (amount * price):
+            new_value = asset.value - (amount * price)
+            if new_value <= 0:
+                db.execute("DELETE FROM assets WHERE id = :id", {"id": asset.id})
+            else:
+                db.execute(
+                    "UPDATE assets SET value = :value WHERE id = :id",
+                    {"value": new_value, "id": asset.id}
+                )
+    db.commit()
