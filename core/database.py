@@ -1,25 +1,36 @@
-import logging
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, MetaData
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import os
+from cryptography.fernet import Fernet  # For encryption (install later)
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+Base = declarative_base()
+metadata = MetaData()
 
-# Use SQLite database file (neuralnet.db in the app directory)
-DATABASE_URL = "sqlite:///neuralnet.db"
+# Encryption key (generate and store securely)
+key = Fernet.generate_key()
+cipher_suite = Fernet(key)
 
-# Create SQLAlchemy engine with SQLite settings
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+class DatabaseManager:
+    def __init__(self):
+        # Placeholder: Use environment variable for DB path
+        db_path = os.environ.get("DB_PATH", "neuralnet.db")
+        self.engine = create_engine(f"sqlite:///{db_path}")
+        self.Session = sessionmaker(bind=self.engine)
+        Base.metadata.create_all(self.engine)
 
-# Create session factory for database interactions
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    def get_db(self):
+        """Provide a database session."""
+        session = self.Session()
+        try:
+            yield session
+        finally:
+            session.close()
 
-def get_db():
-    """Provide a database session for FastAPI routes."""
-    logger.info("Opening database session")
-    db = SessionLocal()
-    try:
-      yield db
-    finally:
-        logger.info("Closing database session")
-        db.close()
+    def encrypt_data(self, data):
+        """Encrypt sensitive data (placeholder)."""
+        return cipher_suite.encrypt(data.encode()) if data else data
+
+    def decrypt_data(self, encrypted_data):
+        """Decrypt sensitive data (placeholder)."""
+        return cipher_suite.decrypt(encrypted_data).decode() if encrypted_data else None
