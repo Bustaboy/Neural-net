@@ -36,3 +36,12 @@ CREATE TABLE IF NOT EXISTS trades (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
+
+-- Create market_data table for shared market data
+CREATE TABLE IF NOT EXISTS market_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    price REAL NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    change REAL DEFAULT 0.0
+);
