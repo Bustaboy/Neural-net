@@ -1,10 +1,12 @@
 # ml/ensemble.py
 from stable_baselines3 import PPO
-from pyfl import FederatedLearner  # Hypothetical federated learning library
+from pyfl import FederatedLearner
 from typing import Dict, Any, List
 from core.database import EnhancedDatabaseManager
 import numpy as np
 import logging
+import chainlink  # Hypothetical Chainlink oracle client
+from scipy.optimize import minimize
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +14,7 @@ class EnsembleModel:
     def __init__(self, model_path: str = "models/central_model.pkl"):
         self.db_manager = EnhancedDatabaseManager()
         self.fed_learner = FederatedLearner(node_id="neural_net_node")
+        self.chainlink = chainlink.OracleClient("YOUR_CHAINLINK_NODE")  # Replace with actual node
         self.agents = {
             "scalping": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/scalping"),
             "arbitrage": PPO("MlpPolicy", env="TradingEnv", tensorboard_log="logs/arbitrage"),
@@ -20,10 +23,13 @@ class EnsembleModel:
         }
         self.model_path = model_path
         self.crowd_models = []
+        self.hyperparameters = {
+            agent_name: {"learning_rate": 0.0003, "exploration_fraction": 0.03}
+            for agent_name in self.agents
+        }
         self.load_crowd_models()
 
     def load_crowd_models(self):
-        """Load top-performing community models."""
         models = self.db_manager.fetch_all(
             "SELECT model_data, agent_type FROM user_models WHERE performance_score > 0.9 ORDER BY performance_score DESC LIMIT 20"
         )
@@ -31,16 +37,54 @@ class EnsembleModel:
             self.crowd_models.append((model["agent_type"], np.frombuffer(model["model_data"])))
         logger.info(f"Loaded {len(self.crowd_models)} crowd-sourced models")
 
-    def train(self, market_data: Dict[str, Any]):
+    def validate_data(self, market_data: Dict[str, Any]) -> bool:
+        """Validate market data using Chainlink oracle."""
+        try:
+            oracle_price = self.chainlink.get_price(market_data.get("symbol", "BTC/USDT"))
+            if abs(oracle_price - market_data.get("price", 0.0)) / oracle_price < 0.01:  # 1% tolerance
+                return True
+            logger.warning("Market data validation failed")
+            return False
+        except Exception as e:
+            logger.error(f"Oracle validation error: {e}")
+            return False
+
+    def optimize_hyperparameters(self, agent_name: str, env_data: Dict[str, Any]):
+        """Optimize hyperparameters using Bayesian optimization."""
+        def objective(params):
+            learning_rate, exploration = params
+            agent = self.agents[agent_name]
+            agent.set_parameters({"learning_rate": learning_rate, "exploration_fraction": exploration})
+            reward = agent.evaluate(env_data, timesteps=100)  # Placeholder evaluation
+            return -reward  # Minimize negative reward
+        try:
+            result = minimize(
+                objective,
+                [self.hyperparameters[agent_name]["learning_rate"], self.hyperparameters[agent_name]["exploration_fraction"]],
+                bounds=[(1e-5, 1e-3), (0.01, 0.1)]
+            )
+            self.hyperparameters[agent_name]["learning_rate"] = result.x[0]
+            self.hyperparameters[agent_name]["exploration_fraction"] = result.x[1]
+            logger.info(f"Optimized hyperparameters for {agent_name}: {self.hyperparameters[agent_name]}")
+        except Exception as e:
+            logger.error(f"Hyperparameter optimization error: {e}")
+
+    def train(self, market_data: Dict[str, Any], incremental: bool = False):
         """Train multi-agent RL with federated learning."""
         try:
+            if not self.validate_data(market_data):
+                logger.warning("Skipping training due to invalid data")
+                return
             env_data = self.prepare_env_data(market_data)
+            timesteps = 1000 if incremental else 20000
             for agent_name, agent in self.agents.items():
-                agent.learn(total_timesteps=20000, progress_bar=True)
+                agent.set_parameters(self.hyperparameters[agent_name])
+                agent.learn(total_timesteps=timesteps, progress_bar=True)
                 for crowd_model in [m[1] for m in self.crowd_models if m[0] == agent_name]:
-                    agent.load_parameters(crowd_model, exploration_fraction=0.03)
+                    agent.load_parameters(crowd_model, exploration_fraction=self.hyperparameters[agent_name]["exploration_fraction"])
+                if incremental:
+                    self.optimize_hyperparameters(agent_name, env_data)
                 agent.save(f"{self.model_path}_{agent_name}")
-            # Federated learning update
             self.fed_learner.aggregate([agent.get_parameters() for agent in self.agents.values()])
             self.fed_learner.distribute(self.agents)
             self.share_model(market_data.get("performance_score", 0.95))
@@ -48,7 +92,6 @@ class EnsembleModel:
             logger.error(f"Training error: {e}")
 
     def share_model(self, performance_score: float):
-        """Share high-performing models with community."""
         if performance_score > 0.9:
             for agent_name, agent in self.agents.items():
                 model_data = agent.save(format="buffer")
@@ -59,17 +102,15 @@ class EnsembleModel:
             logger.info("Shared multi-agent models with community")
 
     def prepare_env_data(self, market_data: Dict[str, Any]) -> Dict:
-        """Prepare data for RL environment."""
         return {
             "price": market_data.get("price", 0.0),
             "volatility": market_data.get("volatility", 0.01),
             "sentiment": market_data.get("sentiment", 0.0),
             "defi_apy": market_data.get("defi_apy", 0.5),
-            "portfolio_weights": market_data.get("portfolio_weights", [0.5, 0.5])  # BTC, ETH
+            "portfolio_weights": market_data.get("portfolio_weights", [0.5, 0.5])
         }
 
     def predict(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Combine predictions from multiple agents."""
         observation = self.prepare_env_data(market_data)
         votes = {"buy": 0, "sell": 0, "hold": 0}
         confidences = []
@@ -85,10 +126,9 @@ class EnsembleModel:
         }
 
     def rebalance_portfolio(self, market_data: Dict[str, Any]) -> List[float]:
-        """Predict optimal portfolio weights."""
         observation = self.prepare_env_data(market_data)
         weights, _ = self.agents["rebalancing"].predict(observation)
-        return np.softmax(weights).tolist()  # Normalize weights
+        return np.softmax(weights).tolist()
 
     @staticmethod
     def load(model_path: str) -> 'EnsembleModel':
