@@ -89,3 +89,4 @@ stripe>=5.0.0
 
 ccxt  # For live Binance data
 yfinance  # For 20 years of historical data
+alpha_vantage  # For extended historical data
