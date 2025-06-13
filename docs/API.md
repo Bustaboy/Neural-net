@@ -8,7 +8,7 @@ The world's most powerful retail crypto trading bot, surpassing institutional sy
   - Example: $500 capital, $50 profit/month = $5/month fee.
 - **Free Tier**: 2 trades/day, basic ML, no social trading.
 - **Premium Tier**: $20/month, unlimited trades, custom AI agents.
-- Contact: https://x.ai/grok for details.
+- Contact: [TO BE ADDED] for details.
 
 ## Endpoints
 - **POST /bot/start**: Start bot with testnet mode and compounding.
